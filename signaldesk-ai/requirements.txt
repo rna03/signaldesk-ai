@@ -1,0 +1,4 @@
+datasets
+pandas
+pytest
+scikit-learn
