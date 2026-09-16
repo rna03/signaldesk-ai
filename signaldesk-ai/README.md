@@ -1,4 +1,4 @@
-# SignalDesk AI — Phase 1, 2 ve 3
+# SignalDesk AI — Phase 1, 2, 3 ve 4
 
 SignalDesk AI'ın uzun vadeli amacı, müşteri destek görüşmelerindeki tekrar eden ve çözülmeyen sorunları fark edip olağandışı artışları erken göstermektir. İlk iki aşama yalnızca gerçek veri kümesinin yapısını inceler ve aynı görüşmenin iki kaydını bir araya getirir; model eğitmez.
 
@@ -37,6 +37,9 @@ Gerçek veriyle doğrulanan özet: `test` split'inde 1.746 satır, 873 benzersiz
 - `src/signaldesk/ml/train_domain_classifier.py`: doğrulanmış görüşmeleri yeniden `build_conversations()` ile oluşturur. `prepare_examples()` yalnızca iki transcripti birleştirip `domain` etiketini alır; kimlik ve konuşmacı metadata'sını model girdisine koymaz. `split_examples()` görüşmeleri sabit tohum ve `stratify` ile 80/20 ayırır. `make_pipeline()` TF-IDF ile Logistic Regression'ı birleştirir. `model.fit(x_train, y_train)` yalnızca train verisini görür. Test tahminleri, metrikler ve karışıklık matrisi yazdırılır; model yerel artifact olarak kaydedilir.
 - `src/signaldesk/ml/predict_domain.py`: kaydedilmiş modeli yükleyip verilen metnin domain tahminini ve en yüksek sınıf skorunu gösterir. Yalnızca kendi eğittiğiniz, güvenilir yerel joblib dosyasını açın.
 - `tests/test_domain_classifier.py`: metin/etiket hazırlamayı, görüşme ayrımını ve tahmin çıktısını sentetik verilerle sınar; gerçek veri indirmez.
+- `src/signaldesk/clustering/__init__.py`: etiketsiz keşif kodunun Python paketi olduğunu belirtir.
+- `src/signaldesk/clustering/discover_issues.py`: doğrulanmış görüşmeleri yeniden oluşturur, yalnızca `customer_text` ile TF-IDF matrisi üretir ve farklı K-Means adaylarını karşılaştırır. `make_vectorizer()` kaynak metni değiştirmeden sayısal özellik oluşturur. `cluster_counts()` dengeyi, `top_terms()` merkezde ağır basan sözcükleri, `representative_indices()` merkeze yakın gerçek görüşmeleri bulur. `select_candidate()` silhouette yakınlığını ve küme büyüklüğünü birlikte dikkate alır. `domain` yalnızca sonuçlar üretildikten sonra dağılım göstermek için okunur.
+- `tests/test_issue_clustering.py`: sentetik müşteri metinleriyle TF-IDF, K-Means, sayım, üst terimler ve K seçimi yardımcılarını internet olmadan sınar.
 - `requirements.txt`: bu aşamada gereken `datasets`, `pandas`, `pytest` paketlerini listeler. Pandas henüz veri işlemese de sonraki veri keşfi çalışmaları için erişimi test edilir.
 - `.gitignore`: sanal ortam, Python önbelleği ve yerel `.env` dosyalarını Git dışında tutar.
 
@@ -57,6 +60,7 @@ python -m signaldesk.data.build_conversations
 python -m signaldesk.ml.train_domain_classifier
 python -m signaldesk.ml.predict_domain
 python -m signaldesk.ml.predict_domain --text "I need help with my bank transfer."
+python -m signaldesk.clustering.discover_issues
 python -m pytest -q
 ```
 
@@ -85,3 +89,32 @@ Hugging Face burada **dataset sağlar**. Hugging Face'ten hazır bir model kulla
 ### Doğrulanan ilk çalışma
 
 873 görüşme 698 train ve 175 test görüşmesine ayrıldı. Test sonucunda Accuracy **0.9257**, Macro Precision **0.9505**, Macro Recall **0.9093**, Macro F1 **0.9237** çıktı. Yanlış tahminlerde en sık karışan yönlü domain çiftlerinin her biri birer kez görüldü; örneğin `hospitality -> entertainment`, `finance -> banking`, `telecom -> entertainment`. Tam sınıf raporu, karışıklık matrisi ve test örnekleri eğitim komutunun terminal çıktısında yer alır. Varsayılan manuel metin tahmini `banking`, confidence **0.1029** oldu; kısa metin için bu düşük skoru kesin sonuç saymayın. Çevrimdışı pytest sonucu: **12 passed**. Sonuçlar veri ve kütüphane sürümüne göre değişebilir.
+
+## Phase 4: etiketsiz müşteri konusu keşfi
+
+Phase 3'te **supervised learning** kullandık: her görüşmenin doğru `domain` etiketi vardı. Burada **unsupervised learning (etiketsiz öğrenme)** kullanıyoruz; veri kümesinde müşterinin *problem türünü* söyleyen doğrulanmış bir etiket yok. **Clustering (kümeleme)**, benzer metinleri gruplamayı dener. Kümelerin ne anlama geldiğini bir insanın örneklerden incelemesi gerekir. Bu nedenle Phase 3'teki Accuracy/F1 değerlerini burada hesaplamıyoruz: karşılaştırılacak gerçek problem etiketleri yok.
+
+**K-Means**, metinlerin sayısal temsilini K adet gruba ayırır. **K**, istediğimiz küme sayısıdır; bir problem türü sayısının gerçek cevabı değildir. Her grubun **centroid (merkez)** denen ortalama bir TF-IDF vektörü vardır. Algoritma vektörleri yakın merkezlere yerleştirir. TF-IDF'yi tekrar kullanabiliyoruz çünkü bu yöntem etiket gerektirmeden metindeki terimlerden sayısal vektör oluşturur. Burada yalnızca `customer_text` kullanıyoruz: müşterinin anlattığı ihtiyaca odaklanmak ve temsilcinin standart yanıtlarının etkisini azaltmak için. `agent_text`, `domain`, konuşmacı kimliği, dosya adı, aksan ve cinsiyet model girdisine verilmez. `domain` yalnızca **kümeleme bittikten sonra** kümelerin dağılımını anlamak için kullanılır.
+
+Vektörler L2 normlu olduğundan metinler arasındaki **cosine similarity**, sözcük ağırlıklarının yönce benzerliğini anlatır: ortak ayırt edici terimler arttıkça değer yükselir. **Cosine distance** bu benzerliğin tersine işleyen uzaklıktır. K-Means merkezlere Öklid uzaklığı kullanır; bu betikte **Silhouette Score** ayrıca cosine distance ile hesaplanır. Silhouette, bir görüşmenin kendi kümesine, diğer kümelere göre ne kadar yakın olduğunu özetler. Yüksek değer tek başına iyi *problem* kümeleri bulduğumuzu kanıtlamaz; konuşma tarzı, tekrar eden kelimeler veya geniş domain konuları da ayrışabilir. [scikit-learn metin kümeleme örneği](https://scikit-learn.org/stable/auto_examples/text/plot_document_clustering.html) de merkez terimlerinin yalnızca yorumlama ipucu olduğunu gösterir.
+
+Vektörleştirici İngilizce yaygın sözcükleri ve ilk denemede kümeleri domine ettiği görülen `um`, `uh`, `yes`, `ohh`, `hm` gibi konuşma dolgularını **yalnızca TF-IDF sözlüğünden** çıkarır. `min_df=3`, tekil rastlantısal terimleri azaltır; `max_df=0.85`, neredeyse her görüşmedeki sözcükleri sınırlar; en çok 12.000 özellik ve tek/ikili sözcük dizileri kullanılır. Özgün transcriptler yerinde kalır. **Top terms**, küme merkezinde TF-IDF ağırlığı yüksek terimlerdir; kümenin yaklaşık içeriğini anlatır fakat otomatik ve kesin bir problem etiketi değildir. **Merkeze yakın örnek**, o kümenin merkez vektörüne Öklid uzaklığı en az olan gerçek müşteri dökümüdür. Bu örnekler yalnızca terminal gösteriminde kısaltılır.
+
+### Gerçek veriyle K seçimi ve sınırlar
+
+873 müşteri dökümü için 10.326 TF-IDF özelliği oluştu. Sabit `random_state=42` ile denenen adaylar:
+
+| K | Cosine silhouette | En küçük küme | En büyük küme |
+|---:|---:|---:|---:|
+| 8 | 0.0310 | 52 | 218 |
+| 12 | 0.0414 | 35 | 260 |
+| 16 | 0.0451 | 19 | 127 |
+| 20 | 0.0382 | 18 | 113 |
+| 24 | 0.0455 | 12 | 90 |
+| 30 | 0.0365 | 11 | 65 |
+
+**K=16** seçildi. K=24'ün silhouette değeri yalnızca 0.0004 daha yüksek; K=16 daha az kümeyle incelemeyi kolaylaştırıyor ve en büyük kümesi verinin %14,5'i. K=12'nin 260 görüşmelik genel kümesi (%29,8) çok geniş. Kod, en az 5 üyeli ve en büyük kümesi toplamın en fazla %20'si olan adaylardan, en iyi silhouette değerine 0.005 yakın en küçük K'yi seçer. Bu eşikler keşif için bilinçli bir denge kuralıdır; gerçek problem türü sayısını kanıtlamaz. K=16 üst terimlerinde teslim edilmeyen paketler, uçuş değişikliği, banka transferi, doktor randevusu ve ürün iadesi gibi incelenebilir konular görülüyor.
+
+Sonuç yine de sınırlı. Cluster 7 (`need, guys, think...`, 106 görüşme) 16 domaini karıştırıyor. Cluster 9 (`package, perfect, good...`, 127 görüşme) seyahat, teslimat ve perakendeyi birlikte tutuyor; `package` farklı anlamlarda kullanılabiliyor. Cluster 14 (`zero, zero zero, flight...`, 45 görüşme) konuşmalarda söylenen sayıların etkisini gösteriyor. Cluster 10 teknoloji ve telekomu (36 ve 30 görüşme) birleştiriyor. Bazı kümeler problemden çok geniş hizmet alanını yakalıyor; örneğin `flight/seat` veya `energy/solar`. **0.0451 düşük bir silhouette değeridir** ve bu karma kümelerle birlikte TF-IDF'nin yalnızca sözcük benzerliğine dayanmasının sınırını gösterir. Küme numaraları veya üst terimleri “gerçek problem etiketi” olarak kullanmayın. Bu aşama zaman içinde artış veya çözülmeyen sorun tespiti de yapmaz.
+
+Betik her kümenin büyüklüğünü, üst terimlerini, sonradan hesaplanan domain dağılımını ve merkeze en yakın üç gerçek `customer_text` önizlemesini terminale basar. Hiçbir CSV/JSON ya da model artifact dosyası oluşturmaz. Phase 4 doğrulamasında **15 pytest testi geçti**.
