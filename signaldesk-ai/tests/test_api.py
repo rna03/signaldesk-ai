@@ -82,6 +82,18 @@ def test_ready_missing_artifact_is_controlled_503(client, tmp_path):
     assert str(tmp_path) not in response.text
 
 
+def test_ready_rejects_corrupt_clusterer_as_503(client, tmp_path):
+    clusterer_path = tmp_path / "clusterer.joblib"
+    dump({"not": "a fitted clusterer"}, clusterer_path)
+    service = SignalDeskService(clusterer_path=clusterer_path)
+    service.__dict__["domain_artifact"] = {"input_mode": "customer_text", "pipeline": object()}
+    app.dependency_overrides[get_service] = lambda: service
+    response = client.get("/ready")
+    assert response.status_code == 503
+    assert "clusterer artifact cannot be read" in response.json()["detail"]
+    assert str(tmp_path) not in response.text
+
+
 def test_info_and_docs(client):
     response = client.get("/api/v1/info")
     assert response.status_code == 200
@@ -191,6 +203,16 @@ def test_demo_response_schema(client):
         "timestamp", "cluster_id", "current_count", "historical_mean",
         "historical_std", "anomaly_score", "increase_ratio", "descriptive_terms",
     }
+
+
+def test_corrupt_demo_artifact_is_controlled_503(client, tmp_path):
+    demo_path = tmp_path / "early_warning_demo.json"
+    demo_path.write_text("{broken json", encoding="utf-8")
+    app.dependency_overrides[get_service] = lambda: SignalDeskService(demo_path=demo_path)
+    response = client.get("/api/v1/alerts/demo")
+    assert response.status_code == 503
+    assert "Synthetic demo artifact cannot be read" in response.json()["detail"]
+    assert str(tmp_path) not in response.text
 
 
 def test_unexpected_error_hides_details(client):

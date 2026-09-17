@@ -1,8 +1,221 @@
-# SignalDesk AI — Phase 1–9
+# SignalDesk AI
+
+**Customer Issue Intelligence & Early Warning System**
+
+Customer support conversations contain recurring issues that may increase before teams notice them manually. SignalDesk analyzes customer text, discovers semantic issue groups, and demonstrates explainable early-warning detection. This is a local research and learning project built on a public dataset; its alert timeline is a **synthetic demonstration**, not live monitoring.
+
+The dashboard and API run from the same FastAPI process: **<http://127.0.0.1:8000/>** · [Swagger API documentation](http://127.0.0.1:8000/docs). **Phase 10 is the final development phase** of this project.
+
+## 1. Project Overview
+
+SignalDesk AI, İngilizce müşteri destek metnine bir hizmet alanı (`domain`) tahmini ve anlamsal küme numarası verir. Ayrı bir deney, kümelerde saatlik artışın nasıl uyarıya dönüşebileceğini sentetik zamanlarla gösterir. Proje veri keşfinden model karşılaştırmasına, API'ye ve hafif bir web dashboard'una kadar uçtan uca öğrenme amacı taşır. Kaynak kayıtlar veya üretilen modeller Git'e eklenmez.
+
+## 2. Problem
+
+Destek ekibi çok sayıda görüşme arasında benzer müşteri taleplerini ve ani artışları geç fark edebilir. Tek bir satırın hangi çağrıya ait olduğu, şikâyetin gerçek etiketi ve olay zamanı bilinmeden güvenilir bir erken uyarı kurulamaz. Bu nedenle önce veri yapısı ve sınırlar doğrulandı. Kullanılan araştırma veri kümesinde gerçek çağrı zamanı veya doğrulanmış problem etiketi bulunmadığından bu proje gerçek operasyonel alarm iddiasında bulunmaz.
+
+## 3. Solution
+
+`file_name` ve `role` ile doğrulanmış müşteri/temsilci kanalları 873 görüşmeye eşleştirilir. API'ye gelen **yalnız müşteri metni**, bir TF-IDF + Logistic Regression sınıflandırıcısıyla domain tahminine, MiniLM + K-Means hattıyla anlamsal kümeye gider. Sonuçta küme merkezine cosine similarity ve açıklayıcı terimler de verilir. Dashboard tekli ve en çok 50 metinlik toplu analiz için bu gerçek API'yi çağırır. Ayrı erken uyarı endpoint'i, sentetik saatlerde hesaplanan demo uyarılarını gösterir.
+
+## 4. Final Architecture
+
+```text
+Customer message
+      ↓
+Web Dashboard (HTML / CSS / Vanilla JavaScript)
+      ↓ HTTP / JSON
+FastAPI → Pydantic validation → Analysis Service
+                                  ├── TF-IDF → Logistic Regression → Domain
+                                  └── MiniLM → 384-D embedding → K-Means K=16
+                                                                      ↓
+                                                  Cluster + centroid cosine similarity
+
+Separate early-warning demo:
+Semantic clusters → synthetic hourly events → previous 12-hour baseline
+                  → z-score threshold → demo alerts
+
+Separate Phase 8 offline experiment:
+customer_text → FLAN-T5-small → issue_statement → MiniLM → K-Means
+```
+
+Analysis Service yerel artifact'leri yükler ve önbellekte tutar. Phase 8 deneyinin FLAN-T5 çıktısı ana API analiz yolunda kullanılmaz. Dashboard aynı sunucunun `/` ve `/static/` yollarından servis edilir; ayrıca frontend sunucusu veya Node derlemesi gerekmez.
+
+## 5. AI / ML Components
+
+| Bileşen | Bu projedeki işi |
+|---|---|
+| TF-IDF + Logistic Regression | `customer_text` üzerinden hizmet alanı sınıflandırması; kaydedilen modelde `input_mode="customer_text"` sözleşmesi doğrulanır. |
+| Sentence Transformers `all-MiniLM-L6-v2` | Özgün müşteri metninden 384 boyutlu anlamsal vektör üretir. |
+| K-Means K=16 | MiniLM vektörlerini etiketsiz gruplar; atanan merkezle cosine similarity hesaplanır. |
+| Saatlik erken uyarı deneyi | Önceki 12 saatlik geçmişe göre sayım artışını z-score ile inceler; asgari sayım 8, eşik 3.0. Zamanlar sentetiktir. |
+| FLAN-T5-small | Phase 8'de çevrimdışı `issue_statement` çıkarma karşılaştırması; ana servis akışında yoktur. |
+
+### Technology Stack
+
+Gerçek teknoloji yığını: **Python 3.11+**, FastAPI, Uvicorn, Pydantic, scikit-learn, TF-IDF, Logistic Regression, Hugging Face Datasets, Hugging Face Transformers, Sentence Transformers, MiniLM, K-Means, pandas, pytest, HTML, CSS ve Vanilla JavaScript. FLAN-T5-small yalnız deneysel yolda kullanılır. Veritabanı, React, Docker veya ayrı frontend bağımlılığı yoktur.
+
+## 6. Dataset
+
+Kaynak: [AppTek Call-Center Dialogues](https://huggingface.co/datasets/apptek-com/apptek_callcenter_dialogues), herkese açık araştırma veri kümesi. Varsayılan `test` split'inde **1.746 konuşmacı kanalı kaydı**, eşleştirme doğrulamasından geçen **873 customer–agent görüşmesi** vardır. `channel1` ve `channel2` rollerle sabit eşleşmez; konuşan tarafı `role` belirler. `domain` hizmet alanıdır, **doğrulanmış müşteri problemi etiketi değildir**. Bu veri rol yapılarak kaydedilmiştir; gerçek müşteri akışı veya zaman içindeki gerçek sıklık olarak yorumlanmamalıdır. Dataset, Hub, `load_dataset()`, split, feature ve metadata kavramları aşağıdaki [ayrıntılı öğrenme notlarında](#ayrıntılı-öğrenme-ve-deney-notları) örneklerle açıklanır.
+
+## 7. Phase / Experiment History
+
+| Aşama | Karar veya çıktı |
+|---|---|
+| 1–2 | Hugging Face verisini keşif, profil, 873 doğru görüşme eşleşmesi. |
+| 3 | Müşteri ve temsilci metniyle ilk domain baseline'ı. |
+| 4–5 | TF-IDF ve MiniLM temsilleriyle etiketsiz müşteri konusu keşfi; ana semantic model K=16. |
+| 6 | Gerçek timestamp olmadan, sentetik saatli erken uyarı deneyi. |
+| 7 | FastAPI ile tekli analiz ve demo endpoint'leri. |
+| 8 | FLAN-T5-small ile çevrimdışı issue çıkarma; ana serving yoluna alınmadı. |
+| 9 | Eğitim ve API girdisi müşteri metninde eşitlendi; artifact sözleşmesi, readiness ve batch eklendi. |
+| 10 | Gerçek API'ye bağlı, bağımlılıksız dashboard ve final doğrulama. |
+
+## 8. Evaluation Results
+
+Her iki domain deneyi aynı stratified 698 eğitim / 175 test ayrımında (`random_state=42`) ölçüldü. Müşteri metni kullanan modelin skoru daha düşük; yine de API'nin aldığı girdiye uygun olduğu için **serving modeli odur**.
+
+| Domain girdisi | Accuracy | Macro precision | Macro recall | Macro F1 | Kullanım |
+|---|---:|---:|---:|---:|---|
+| `customer_text` | **0.8400** | **0.8450** | **0.7939** | **0.8031** | Ana API |
+| `customer_text + agent_text` | 0.9257 | 0.9505 | 0.9093 | 0.9237 | Tarihsel Phase 3 deneyi |
+
+İlk modelin API'deki müşteri metni girdisiyle **training-serving mismatch** oluşturduğu Phase 9'da düzeltildi. Eski biçimli artifact yüklenirse kontrollü `503` döner.
+
+| Etiketsiz temsil | Seçilen K | Cosine silhouette | Yorum |
+|---|---:|---:|---|
+| Ham `customer_text` → MiniLM | **16** | **0.2070** | Ana semantic hat; küme boyutları 35–75. |
+| FLAN-T5 `issue_statement` → MiniLM | 30 | 0.1074 | 873 kaydın 263'ü fallback; çevrimdışı deney. |
+
+**Silhouette**, vektör uzayındaki küme ayrımını ölçer; supervised accuracy veya gerçek müşteri problemi doğruluğu değildir. Bu iki temsilin farklı skorları tek başına bir yöntemin insan değerlendirmesinde daha iyi olacağını kanıtlamaz. Ayrıntılı hata örnekleri ve deney tabloları aşağıdaki aşama notlarında korunmuştur.
+
+## 9. API
+
+| Endpoint | Görev |
+|---|---|
+| `GET /` | Dashboard HTML'i. |
+| `GET /health` | Model yüklemeden liveness; `{"status":"ok"}`. |
+| `GET /ready` | Yerel domain ve semantic artifact/metadata readiness; hazırsa `{"status":"ready"}`, sorun varsa `503`. |
+| `GET /api/v1/info` | Sürüm, model ve `synthetic_demo` bilgisi. |
+| `POST /api/v1/analyze` | `{"customer_text":"..."}` için domain, küme, skor, terim ve `analysis_metadata`. |
+| `POST /api/v1/analyze/batch` | `{"items":[{"customer_text":"..."}]}` için girdi sırasıyla `results`; **1–50** öğe. |
+| `GET /api/v1/alerts/demo` | `temporal_mode="synthetic_demo"`, `is_real_time=false` ve sentetik uyarılar. |
+| `GET /docs` | Etkileşimli Swagger şeması. |
+
+Boş metin veya geçersiz batch `422`, eksik/uyumsuz artifact `503`, beklenmeyen servis hatası güvenli `500` döndürür. `domain_confidence` sınıflandırıcının `predict_proba` skorudur; kalibre edilmiş doğruluk olasılığı değildir. `cluster_similarity` atanan küme merkezine cosine similarity'dir; olasılık değildir. `/ready` MiniLM'nin ilk kullanımda indirilebilir olmasını garanti etmez. API sürümü `/api/v1/` adresindedir.
+
+## 10. Dashboard
+
+`frontend/index.html` sayfanın erişilebilir form ve tablo yapısını, `frontend/css/styles.css` responsive görünümü, `frontend/js/api.js` HTTP isteklerini, `frontend/js/app.js` DOM durumlarını ve sonuçları yönetir. Dashboard gerçek `/health` ve `/ready` durumlarını; tekli analizde domain, domain model skoru, küme, centroid similarity, terimler ve model metadata'sını; batch analizinde girdi sıralı tabloyu; `/api/v1/info` model bilgisini; `/api/v1/alerts/demo` **Synthetic Temporal Demo** tablosunu gösterir. Boş girdi, 422/503/500 ve ağ kesintisi için okunabilir durumlar vardır. Kullanıcı ve API metni güvenli DOM metni olarak yerleştirilir; harici CDN kullanılmaz. FastAPI `FileResponse` ile HTML'i, `StaticFiles` ile `/static/css/` ve `/static/js/` dosyalarını servis eder. `tests/test_frontend_serving.py`, ana sayfa ve statik dosyalar açılırken API rotalarının erişilebilir kaldığını internetsiz test eder.
+
+## 11. Installation
+
+Windows PowerShell'de Python 3.11 veya üzeri kurulu olmalıdır. Proje kökünden:
+
+```powershell
+cd "C:\Users\Rana\Documents\ChatGPT\call center\signaldesk-ai"
+py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+$env:PYTHONPATH = (Resolve-Path .\src).Path
+```
+
+Python 3.12 kullanıyorsanız `py -3.12` de uygundur. Yeni PowerShell oturumunda `PYTHONPATH` satırını yineleyin. İlk veri ve model indirmesi internet gerektirebilir; public veri için API key veya Hugging Face token gerekmez.
+
+## 12. Running the Project
+
+Önce aşağıdaki [artifact üretme](#13-reproducing-artifacts) komutlarını çalıştırın. Sonra aynı etkin sanal ortam ve `PYTHONPATH` ile:
+
+```powershell
+python -m uvicorn signaldesk.api.main:app --reload
+```
+
+Tarayıcıda <http://127.0.0.1:8000/> dashboard'u, <http://127.0.0.1:8000/docs> API şemasını açar. `--reload` yerel geliştirme kolaylığıdır. Sunucuyu `Ctrl+C` ile durdurun. Başka bir PowerShell oturumundan `Invoke-RestMethod http://127.0.0.1:8000/health` ve `Invoke-RestMethod http://127.0.0.1:8000/ready` ile durumunu kontrol edin.
+
+## 13. Reproducing Artifacts
+
+Proje kökünde etkin ortam ve `PYTHONPATH` ayarıyla, ana API'nin ihtiyaç duyduğu **yerel** dosyaları sırayla üretin:
+
+```powershell
+python -m signaldesk.ml.train_domain_classifier
+python -m signaldesk.clustering.discover_issues_semantic
+python -m signaldesk.monitoring.detect_emerging_issues
+```
+
+İlk komut `artifacts/domain_classifier.joblib` dosyasına müşteri metni modelini ve girdi sözleşmesini, ikinci komut `artifacts/semantic_clusterer.joblib` ile `artifacts/semantic_cluster_metadata.json` dosyalarını, üçüncü komut `artifacts/early_warning_demo.json` sentetik uyarı verisini yazar. API başlatılırken modeller yeniden eğitilmez. Eski, iki taraflı domain artifact'iyle `/ready` ve analiz kullanılamaz; ilk komutu yeniden çalıştırın. MiniLM ilk çıkarımda yerel model önbelleğine ihtiyaç duyar ve gerekirse indirilir.
+
+İsteğe bağlı veri incelemesi ve **ayrı Phase 8 deneyi**:
+
+```powershell
+python -m signaldesk.data.inspect_dataset
+python -m signaldesk.data.profile_dataset
+python -m signaldesk.data.build_conversations
+python -m signaldesk.issues.extract_issues --sample
+python -m signaldesk.issues.extract_issues --full
+python -m signaldesk.clustering.discover_extracted_issues_semantic
+```
+
+`--full`, Git dışında tutulan `artifacts/extracted_issues.json` dosyasını üretir. Bu iki deney komutu dashboard'u çalıştırmak için gerekli değildir; FLAN-T5 modeli indirmesi ve CPU süresi gerekebilir. Veri kümesinin tamamı repoya kopyalanmaz.
+
+## 14. Running Tests
+
+```powershell
+python -m pytest -q
+```
+
+Testler sentetik küçük kayıtlar ve sahte servis/model nesneleri kullanır; Hugging Face veri kümesini veya MiniLM'yi internetten indirmeyi zorunlu kılmaz. Frontend serving testleri `/`, CSS ve JavaScript yolları ile mevcut API yollarını doğrular. Gerçek veri eğitimi ve dashboard'daki manuel kullanım ayrıca sınanmalıdır.
+
+## 15. Demo Walkthrough
+
+Mülakatta 2–3 dakikalık akış:
+
+1. <http://127.0.0.1:8000/> sayfasını açın; API Status (`/health`) ve Analysis Readiness (`/ready`) durumunu gösterin.
+2. `My internet keeps disconnecting every few minutes and restarting the modem does not fix it.` metnini tekli analizde gönderin; domain skoru ve küme benzerliğinin anlamını açıklayın.
+3. Modem, banka transferi ve uçuş tarihi metinlerini batch'e yazıp sıra korunarak dönen sonuçları gösterin.
+4. **Synthetic Temporal Demo** bölümündeki artışları gösterin; veri kümesinde gerçek timestamp olmadığını belirtin.
+5. `/api/v1/info` model bilgisini ve `/docs` Swagger sayfasını gösterin.
+
+Sonuçlar çalışan artifact'e bağlıdır; bu rehber sabit tahmin veya canlı alarm vaat etmez.
+
+## 16. Technical Decisions
+
+- Önce tüm çağrılarda `file_name` ve `role` tutarlılığı doğrulandı; kanal numarasından müşteri rolü tahmin edilmedi.
+- Kaynak transcript korunur. TF-IDF'nin kendi özellik çıkarımı kaynak metni değiştirmez.
+- Domain modeli yalnız API'nin aldığı `customer_text` ile eğitildi; artifact `input_mode` kontrolü eski modeli sessizce kullanmayı engeller.
+- Domain ve MiniLM/K-Means ayrı sinyallerdir. Cluster terimleri açıklama içindir; onaylı problem etiketleri değildir.
+- `/health` hafif liveness, `/ready` yerel artifact kontrolüdür. Ağ/model önbelleğinin bütün koşullarını önceden sınamaz.
+- Batch bir HTTP isteğinde vektörleri birlikte encode eder; bu tasarım gerçek zamanlı event streaming değildir.
+- HTML/CSS/Vanilla JS ve FastAPI static serving aynı yerel süreçte çalışır; frontend derleme veya CDN gerekmez.
+- `.gitignore`, `.venv`, model önbelleği ve üretilen artifact'leri Git dışında tutar; kaynak koda secret yazılmaz. API hataları yerel yol veya stack trace döndürmez; frontend güvenli metin render eder.
+
+## 17. Limitations
+
+- AppTek, rol yapılarak oluşturulmuş **public research dataset**'tir; yalnız **873** doğrulanmış görüşme vardır. Gerçek operasyonel müşteri akışı veya kullanım hakkı incelemesinin yerine geçmez.
+- Doğrulanmış issue ground-truth etiketleri yoktur; semantic cluster'lar onaylı issue etiketleri değildir. Domain modeli `finance` gibi bazı sınıfları karıştırır.
+- Domain model skoru kalibre edilmiş kesinlik, cluster similarity olasılık değildir.
+- Gerçek timestamp ve çözüm durumu yoktur. Erken uyarı zamanı **sentetik**tir; üretimde gerçek zamanlı ingestion veya canlı alarm yoktur.
+- Kalıcı veritabanı, alarm geçmişi, authentication/authorization, insan geri bildirimi ve model izleme bulunmaz.
+- Batch 50 öğeyle sınırlıdır, ancak tekil metin uzunluğu için ayrı bir üst sınır yoktur; bu yerel araştırma API'si internete açık bir servis olarak sunulmadan önce istek boyutu ve erişim kontrolü eklenmelidir.
+- FLAN-T5 deneyi ham metin kümelemesini silhouette ile geçmedi; 873 kaydın 263'ünde fallback ve bazı kalite kusurları vardı.
+- İlk veri/model indirmesi ve yerel model önbelleği erişimi başlangıcı veya ilk çıkarımı etkileyebilir; `/ready` bunların tümünü ölçmez.
+
+## 18. Future Work
+
+Gerçek zaman damgalı ve kullanım izni belirlenmiş destek verisi, doğrulanmış issue taxonomy, insanın küme etiketlemesi ve geri bildirimi, gerçek olay akışı, kalıcı uyarı geçmişi, model izleme, authentication, istek boyutu sınırları ve deployment/observability sonraki araştırma konularıdır. Daha güçlü issue çıkarma yöntemleri ancak insan etiketleriyle karşılaştırılarak değerlendirilebilir. Bunların hiçbiri mevcut sistemde uygulanmış özellik olarak sunulmaz.
+
+---
+
+## Ayrıntılı öğrenme ve deney notları
+
+Bu bölüm, Phase 1–9 sırasında yazılan başlangıç düzeyi kavram açıklamalarını, deney tablolarını ve gerçek koşu notlarını korur. Güncel çalıştırma sırası yukarıdaki bölümlerdedir.
+
+### Phase 1: veri keşfi
 
 SignalDesk AI'ın uzun vadeli amacı, müşteri destek görüşmelerindeki tekrar eden ve çözülmeyen sorunları fark edip olağandışı artışları erken göstermektir. İlk iki aşama yalnızca gerçek veri kümesinin yapısını inceler ve aynı görüşmenin iki kaydını bir araya getirir; model eğitmez.
 
-## Bu aşamada kullandığımız veri
+#### Bu aşamada kullandığımız veri
 
 [AppTek Call-Center Dialogues](https://huggingface.co/datasets/apptek-com/apptek_callcenter_dialogues) seçildi. Herkese açık sayfasında müşteri ve temsilci konuşmalarının İngilizce dökümleri, ses dosyaları ve `role`, `domain`, `accent` gibi alanlar bulunuyor. Varsayılan yapılandırmanın tek split'i `test`; veri kartına göre 1.746 konuşmacı kanalı kaydı içeriyor. Görüşmeler rol yapılarak kaydedilmiş: gerçek müşteri şikâyetlerinin sıklığı veya zaman içindeki artışı bu veriden doğrudan çıkarılamaz. Veri kartı bu veriyi özellikle değerlendirme ve analiz için tanımlıyor. Lisans: CC BY-SA 4.0.
 
@@ -12,7 +225,7 @@ Hugging Face, veri kümelerinin ve modellerin paylaşılabildiği bir ekosistemd
 
 Phase 1'de model kullanmıyoruz; önce kayıtların hangi alanları içerdiğini ve hangi sınırları olduğunu anlamamız gerekiyor. İleride `text` ve `role` alanları müşteri sorunlarını anlamaya yardımcı olabilir. Ancak bu veri kümesinde gerçek olay tarihi ve çözüm durumu alanları gösterilmiyor; erken uyarı ve çözümsüzlük değerlendirmesi için ayrıca uygun veri gerekir.
 
-## Phase 2: veri profili ve görüşme eşleştirmesi
+### Phase 2: veri profili ve görüşme eşleştirmesi
 
 **Dataset profiling**, bütün kayıtları tarayıp veri kümesinin şeklini sayılarla anlamaktır. Burada kaç `customer` ve `agent` satırı olduğu, `domain` dağılımı, boş `text` sayısı ve metin uzunlukları buna örnektir. Modelden önce bunu yapıyoruz: iki konuşmacı kaydını yanlış birleştirirsek sonraki analizler de yanlış görüşmeyi anlatır.
 
@@ -24,7 +237,7 @@ Görüşme yapısındaki `customer_text` ve `agent_text`, kaynak dökümlerin bi
 
 Gerçek veriyle doğrulanan özet: `test` split'inde 1.746 satır, 873 benzersiz görüşme kimliği, 873 tam eşleşme, 0 bozuk/eksik eşleşme; 873 `customer`, 873 `agent` satırı. `channel1`: 807 agent ve 66 customer; `channel2`: 66 agent ve 807 customer. `text` boşluğu 0, `audio` için `None` sayısı 1.746. `build_conversations.py` hiçbir CSV/JSON dosyası yazmaz; veri kaynağı Hugging Face olarak kalır.
 
-## Dosyalar ve önemli satırlar
+### Dosyalar ve önemli satırlar
 
 - `src/signaldesk/__init__.py`: `signaldesk` klasörünü Python paketi yapar.
 - `src/signaldesk/data/__init__.py`: veri keşfi kodunun bulunduğu alt paketi tanımlar.
@@ -53,7 +266,7 @@ Gerçek veriyle doğrulanan özet: `test` split'inde 1.746 satır, 873 benzersiz
 - `requirements.txt`: veri/ML bağımlılıklarına ek olarak API için yalnızca `fastapi` ve `uvicorn` ekler. Pydantic FastAPI bağımlılığı olarak gelir.
 - `.gitignore`: sanal ortamı, önbelleği, sır içerebilen `.env` dosyalarını ve yeniden üretilebilir yerel model/demo artifact'lerini Git dışında tutar.
 
-## Windows PowerShell'de çalıştırma
+### Eski aşamaların PowerShell komutları
 
 Python 3.11 veya üzeri kurulu olmalıdır. Komutları bu klasörün **üst dizininde** sırayla çalıştırın:
 
@@ -81,7 +294,7 @@ Bilgisayarınızda Python 3.12 yoksa ve 3.11 varsa `py -3.11 -m venv .venv` kull
 
 Dataset sayfası herkese açık ve bu makinede token olmadan ilk üç kayıt Python ile okundu. Kısıtlı ağ ortamında ilk deneme `ConnectionError: Couldn't reach 'apptek-com/apptek_callcenter_dialogues' on the Hub (LocalEntryNotFoundError)` hatası verdi; ağ erişimi açıldığında aynı komut başarılı oldu. Bir bağlantı veya izin sorunu olursa betik gerçek hata türünü ve mesajını basıp başarısız çıkış koduyla durur. İlk çalıştırma internet gerektirir; pytest internet gerektirmez. Veri kartı: [kaynak ve kullanım açıklaması](https://huggingface.co/datasets/apptek-com/apptek_callcenter_dialogues).
 
-## Phase 3: ilk makine öğrenmesi baseline'ı
+### Phase 3: ilk makine öğrenmesi baseline'ı
 
 **Machine Learning (makine öğrenmesi)**, örneklerden bir örüntü öğrenip yeni bir örnek hakkında tahmin yapmaktır. Burada her görüşmenin müşteri ve temsilci dökümü bir örnek; görüşmenin `domain` değeri doğru cevaptır. Doğru cevapları eğitim sırasında verdiğimiz için bu **supervised learning (denetimli öğrenme)** örneğidir. Sonuç, `banking`, `telecom` gibi sınıflardan biri olduğu için görev **classification (sınıflandırma)**dır. Bu model müşteri sorununun çözüldüğünü veya yeni bir sorun dalgası başladığını söylemez; yalnızca domain tahmin eder. **Baseline**, ilerideki yöntemlerin karşılaştırılacağı ilk ve basit sonuçtur.
 
@@ -99,11 +312,11 @@ TF-IDF kendi sayısal temsilini oluştururken kelimeleri küçük harfe dönüş
 
 Hugging Face burada **dataset sağlar**. Hugging Face'ten hazır bir model kullanmıyoruz. Bu Phase'deki Logistic Regression modelini **biz**, bu verinin train bölümünde eğitiyoruz. Küçük baseline modeli `artifacts/domain_classifier.joblib` dosyasına yerel olarak kaydedilir. `.gitignore` bu dosyayı commit dışında tutar: kaynak veri ve koddan yeniden üretilebilir; ayrıca model dosyası eğitim verisinden izler taşıyabilir. Veri kümesinin tamamı da repoya yazılmaz.
 
-### Doğrulanan ilk çalışma
+#### Doğrulanan ilk çalışma
 
 873 görüşme 698 train ve 175 test görüşmesine ayrıldı. Test sonucunda Accuracy **0.9257**, Macro Precision **0.9505**, Macro Recall **0.9093**, Macro F1 **0.9237** çıktı. Yanlış tahminlerde en sık karışan yönlü domain çiftlerinin her biri birer kez görüldü; örneğin `hospitality -> entertainment`, `finance -> banking`, `telecom -> entertainment`. Tam sınıf raporu, karışıklık matrisi ve test örnekleri eğitim komutunun terminal çıktısında yer alır. Varsayılan manuel metin tahmini `banking`, confidence **0.1029** oldu; kısa metin için bu düşük skoru kesin sonuç saymayın. Çevrimdışı pytest sonucu: **12 passed**. Sonuçlar veri ve kütüphane sürümüne göre değişebilir.
 
-## Phase 4: etiketsiz müşteri konusu keşfi
+### Phase 4: etiketsiz müşteri konusu keşfi
 
 Phase 3'te **supervised learning** kullandık: her görüşmenin doğru `domain` etiketi vardı. Burada **unsupervised learning (etiketsiz öğrenme)** kullanıyoruz; veri kümesinde müşterinin *problem türünü* söyleyen doğrulanmış bir etiket yok. **Clustering (kümeleme)**, benzer metinleri gruplamayı dener. Kümelerin ne anlama geldiğini bir insanın örneklerden incelemesi gerekir. Bu nedenle Phase 3'teki Accuracy/F1 değerlerini burada hesaplamıyoruz: karşılaştırılacak gerçek problem etiketleri yok.
 
@@ -113,7 +326,7 @@ Vektörler L2 normlu olduğundan metinler arasındaki **cosine similarity**, sö
 
 Vektörleştirici İngilizce yaygın sözcükleri ve ilk denemede kümeleri domine ettiği görülen `um`, `uh`, `yes`, `ohh`, `hm` gibi konuşma dolgularını **yalnızca TF-IDF sözlüğünden** çıkarır. `min_df=3`, tekil rastlantısal terimleri azaltır; `max_df=0.85`, neredeyse her görüşmedeki sözcükleri sınırlar; en çok 12.000 özellik ve tek/ikili sözcük dizileri kullanılır. Özgün transcriptler yerinde kalır. **Top terms**, küme merkezinde TF-IDF ağırlığı yüksek terimlerdir; kümenin yaklaşık içeriğini anlatır fakat otomatik ve kesin bir problem etiketi değildir. **Merkeze yakın örnek**, o kümenin merkez vektörüne Öklid uzaklığı en az olan gerçek müşteri dökümüdür. Bu örnekler yalnızca terminal gösteriminde kısaltılır.
 
-### Gerçek veriyle K seçimi ve sınırlar
+#### Gerçek veriyle K seçimi ve sınırlar
 
 873 müşteri dökümü için 10.326 TF-IDF özelliği oluştu. Sabit `random_state=42` ile denenen adaylar:
 
@@ -132,7 +345,7 @@ Sonuç yine de sınırlı. Cluster 7 (`need, guys, think...`, 106 görüşme) 16
 
 Betik her kümenin büyüklüğünü, üst terimlerini, sonradan hesaplanan domain dağılımını ve merkeze en yakın üç gerçek `customer_text` önizlemesini terminale basar. Hiçbir CSV/JSON ya da model artifact dosyası oluşturmaz. Phase 4 doğrulamasında **15 pytest testi geçti**.
 
-## Phase 5: hazır modelden anlamsal embedding ile keşif
+### Phase 5: hazır modelden anlamsal embedding ile keşif
 
 Phase 4'te TF-IDF, her kelime veya kelime çiftine ayrı bir özellik ayırdı; çoğu görüşmede bu özelliklerin büyük kısmı sıfırdır. Buna **sparse vector (seyrek vektör)** denir. **Semantic embedding (anlamsal gömme)** ise hazır bir modelin metni daha kısa bir **dense vector (yoğun vektör)** içine dönüştürmesidir. Bu boyutlar tek tek kelimelerin sayaçları değildir; modelin eğitim sırasında öğrendiği birleşik dil örüntülerini temsil eder. Örneğin “My internet keeps disconnecting.” ile “My connection drops every few minutes.” az sözcük paylaşsa da benzer bir durumu anlatabilir. TF-IDF bu kelime farkında zorlanabilir; embedding bu iki anlamı yakın vektörlere koymayı amaçlar. Üçüncü örnek “I need to change my flight seat.” farklı bir konudur. Betik bu üç cümlenin gerçek model çıktıları arasında cosine similarity hesaplar; beklenen sonucu koda yazmaz.
 
@@ -144,7 +357,7 @@ Bu genel amaçlı model SignalDesk çağrılarına özel eğitilmedi. [Model kar
 
 Hazır model dosyaları varsayılan Hugging Face önbelleğinde tutulur; repoya eklenmez. Eğer önbellek proje altında oluşturulursa `.gitignore` içindeki `.cache/` kuralı onu dışlar. Phase 7 için betik, seçilen fitted K-Means'i `artifacts/semantic_clusterer.joblib` ve aynı koşudaki yalnızca betimleyici terimleri `artifacts/semantic_cluster_metadata.json` olarak yazar. Müşteri transcriptleri veya embedding matrisi kalıcı CSV/JSON'a yazılmaz. İki artifact birlikte yeniden üretilir ve birlikte kullanılmalıdır; Git ikisini de dışlar.
 
-### Gerçek çalışma ve Phase 4 karşılaştırması
+#### Gerçek çalışma ve Phase 4 karşılaştırması
 
 873 `customer_text` için model 384 boyutlu görüşme vektörleri üretti: matris **(873, 384)**. Model sınırını aşan **849** döküm, toplam **3.053** parçaya ayrıldı; bir görüşmede en fazla 10 parça vardı. Her parçanın yeniden tokenleştirilmiş uzunluğu sınır altında kontrol edildi. Sanity check'te internet bağlantısını anlatan A–B cosine similarity **0.6723**, internet ile uçak koltuğunu anlatan A–C **0.1817** çıktı; A–B daha yüksek. Bu küçük kontrol bir accuracy testi değildir.
 
@@ -168,7 +381,7 @@ Phase 5'te örneğin cluster 6 internet hızı/modem metinlerini (**38 telecom /
 
 Betik seçilen her kümenin sayısını, betimleyici üst terimlerini, domain dağılımını ve merkeze cosine olarak en yakın üç gerçek müşteri metninin kısaltılmış önizlemesini terminalde gösterir. Son çevrimdışı test sonucu: **20 passed**.
 
-## Phase 6: sentetik zamanda erken uyarı denemesi
+### Phase 6: sentetik zamanda erken uyarı denemesi
 
 **Önemli: AppTek verisinde gerçek görüşme zaman damgası yoktur.** Bu bölüm gerçek geçmişte bir olay yaşandığını veya SignalDesk'in canlı izleme yaptığını iddia etmez. Gerçek `customer_text` kayıtları ve Phase 5'in semantic cluster atamaları korunur. Yalnızca **temporal evaluation katmanı sentetiktir**: saatler ve kontrollü artış bellekte üretilir; yeni müşteri metni veya yeni görüşme oluşturulmaz.
 
@@ -198,7 +411,7 @@ Açıklanabilir erken uyarı denemesi
 
 **Synthetic timestamp**, gerçek zaman alanı olmadığı için algılayıcı mantığını deneyebilmemizi sağlar. Sabit seed 42 ile her görüşmeye 1–2 Ocak 2026 UTC içindeki 48 saatten bir demo zamanı verilir. **Synthetic surge injection**, yeterli kaydı olan en büyük kümeyi seçip 30 *mevcut* görüşmenin demo zamanını son iki saate taşır; metin, embedding ve cluster ataması aynı kalır. Bu yapay artış kolayca yakalanması amaçlanan kontrollü bir deneydir; normal trafikteki gerçek false positive oranını ölçmez. Bir küme de doğrulanmış problem türü olmadığı için uyarı henüz gerçek bir “çözülmeyen sorun” anlamına gelmez.
 
-### Gerçek kod koşusundaki sentetik demo sonucu
+#### Gerçek kod koşusundaki sentetik demo sonucu
 
 - Görüşme: **873**; semantic küme: **16**. Sentetik aralık: **2026-01-01 00:00–2026-01-02 23:00 UTC**, saatlik bucket.
 - Baseline: önceki **12 saat**; minimum geçmiş **12 saat**; standart sapma alt sınırı **1,0**. Uyarı: **z ≥ 3,0** ve **en az 8 olay**.
@@ -209,7 +422,7 @@ Açıklanabilir erken uyarı denemesi
 
 Cluster 5'in gerçek örnekleri sezonluk ürün stok sorgusu, kıyafet bedeni ve iade gibi farklı perakende konularını içerebilir. Bu yüzden `size/jacket/return` terimleri kümeyi kesin bir “iade problemi” etiketi yapmaz. Ayrıca sentetik zamanlar gerçek trafik ritmini, toplam çağrı hacmindeki değişimi, hafta/gün mevsimselliğini veya olay çözüm durumunu temsil etmez. 12 saatlik basit baseline ve kontrollü enjeksiyonla elde edilen iki uyarı **production monitoring başarısı** değildir. Gerçek zaman damgalı görüşmeler ve insan doğrulamalı problem grupları olmadan erken uyarı kalitesi ölçülemez.
 
-## Phase 7: FastAPI ile model serving temeli
+### Phase 7: FastAPI ile model serving temeli
 
 **API (uygulama programlama arayüzü)**, başka bir programın SignalDesk'ten belirli bir biçimde sonuç istemesidir. **REST API**, bu örnekte HTTP adresleri ve yöntemleriyle çalışan basit arayüzdür. **Endpoint**, çağrılan adres ve yöntem ikilisidir: `GET /health` ile `POST /api/v1/analyze` farklı işlemlerdir. **HTTP GET**, bilgi okumak için kullanılır; `/api/v1/info` yapılandırmayı, `/api/v1/alerts/demo` sentetik uyarı sonucunu okur. **HTTP POST**, sunucuya yeni bir analiz girdisi gönderir; `/api/v1/analyze` verilen müşteri metnini analiz eder, fakat veritabanına kaydetmez.
 
@@ -235,7 +448,7 @@ SignalDesk service layer
 JSON response
 ```
 
-### Yerel artifact'leri üretme ve API'yi çalıştırma
+#### Yerel artifact'leri üretme ve API'yi çalıştırma
 
 Proje kökünde PowerShell açın. İlk iki analiz betiği Hugging Face verisine erişir; MiniLM'nin ilk kullanımı model indirmeyi gerektirebilir. Artık bir kez üretilen yerel artifact'ler servis başlangıcında gerekmez, yalnızca ilgili endpoint ilk çağrıldığında okunur.
 
@@ -265,7 +478,7 @@ Invoke-RestMethod http://127.0.0.1:8000/api/v1/alerts/demo
 
 Tarayıcıda [Swagger arayüzünü](http://127.0.0.1:8000/docs) açabilirsiniz. **OpenAPI**, endpointlerin istek ve yanıt şemalarını açıklayan makine tarafından okunabilir tanımdır; **Swagger UI** bunu sayfa olarak gösterir. Böylece endpointleri görebilir, örnek request gönderebilir ve response'u frontend yapmadan inceleyebilirsiniz. Bu API'de henüz authentication, kalıcı veritabanı veya real-time event ingestion yoktur; herkese açık CORS da eklenmedi. `--reload` geliştirme içindir.
 
-## Phase 8: görüşmeden yapılandırılmış müşteri problemi çıkarma
+### Phase 8: görüşmeden yapılandırılmış müşteri problemi çıkarma
 
 Phase 5, müşterinin uzun ve dolgu ifadeleri içeren dökümünü doğrudan embedding'e verdi. Bu, bazı kümelerde belirli problem yerine geniş hizmet alanını yakalayabiliyor. Phase 8'de **aynı görüşmeler için** önce kısa bir `issue_statement` üretiyoruz, sonra MiniLM ve K-Means'e yalnızca bu ifadeyi verip kontrollü karşılaştırma yapıyoruz. Kaynak `customer_text` aynen korunur. Bu çalışma yalnızca çevrimdışı deneydir; Phase 7'nin `POST /api/v1/analyze` davranışı değiştirilmedi.
 
@@ -291,7 +504,7 @@ Phase 8: customer_text → FLAN-T5 → issue_statement
 
 **Deterministic generation** için sampling kapalı (`do_sample=False`), greedy çözümleme (`num_beams=1`) ve üst çıktı sınırı 32 token kullanılır. Temperature verilmez. Aynı model, girdi ve ortamda sonuçları tekrar üretmeye yardımcı olur; farklı kütüphane/model sürümleri veya donanım mutlak bit eşitliği garantilemez. Modelin 512 tokenlık konum sınırının altında, bu deney için bilinçli bir **128 token girdi penceresi** kullanılır. Betik `calling about`, `looking for`, `I'd like to` gibi ilk açık istek ifadesini bulursa model girdisini o ifadenin hemen önünden başlatıp en fazla yaklaşık 45 sözcüklük parçayı alır; böyle bir ifade yoksa konuşmanın başından ilerler. Bu basit seçim yanlış ifadeye odaklanabilir veya daha sonra söylenen asıl sorunu kaçırabilir. Tokenizer, pencereyi **truncation kapalıyken** ölçer, prompta yer ayırır ve gerçekten modele verilen son dizinin sınıra sığdığını denetler. Kaynak transcript aynen korunur; model girdisinden bir kısım çıkarıldıysa `input_truncated=true` kaydedilir. Model boş, yalnız dolgu/sayı kodu içeren, çok kısa veya açıkça genel yanıt kalıbı olan çıktı verirse ilk seçilen kaynak cümleden en çok 180 karakterlik alıntı kullanılır ve `issue_source="fallback"` yazılır; bu FLAN-T5 üretimi gibi sunulmaz. Diğer kayıtlarda `issue_source="flan_t5"` olur. Çıktıya yalnızca baş/son boşluk ve fazla boşluk temizliği uygulanır; stemming, stopword çıkarma veya agresif temizleme yapılmaz.
 
-### Dosyalar ve yeniden üretme
+#### Dosyalar ve yeniden üretme
 
 - `src/signaldesk/issues/__init__.py`: issue çıkarımı paketini tanımlar.
 - `src/signaldesk/issues/extract_issues.py`: `build_prompt()` yönergeyi tek yerde tutar. `prepare_prompt()` token sınırını kontrol eder. `IssueExtractor` tokenizer/modeli ilk kullanımda yükleyip aynı nesneleri sonraki batch'lerde kullanır. `select_domain_sample()` 10 farklı domainden tekrarlanabilir örnek seçer. `extract_conversations()` özgün metni ve `issue_source` alanını kayda koyar. `write_artifact()` yalnız tam koşuda yerel JSON yazar; `load_artifact()` eksik veya uyumsuz dosyayı reddeder.
@@ -315,7 +528,7 @@ python -m signaldesk.clustering.discover_extracted_issues_semantic
 
 İlk örnek koşusu Hugging Face'ten public veri ve hazır model indirebilir; API key gerekmez. `--sample` dosya yazmaz. Örneklerin üretilen problem cümlelerini gözle inceleyin, sonra `--full` ile 873 kaydı `artifacts/extracted_issues.json` içine yeniden üretin. Dosyada model, prompt sürümü ve generation ayarları da bulunur. Son komut yalnız bu artifact'i okuyarak issue tabanlı kümeleme yapar; FLAN-T5'i tekrar çalıştırmaz. Kümeleme etiketsizdir: silhouette temsil uzayındaki ayrımı ölçer, gerçek problem doğruluğunu ölçmez. `domain` etiketleri issue etiketi değildir. Phase 6 zaman damgaları hâlâ sentetiktir. Bu bir production LLM sistemi değildir.
 
-### Gerçek veri koşusu ve örnek inceleme
+#### Gerçek veri koşusu ve örnek inceleme
 
 Bu makinede PyTorch CPU sürümüyle son `--full` koşusu, **model yüklemesi dahil 119,80 saniye** sürdü. **873** görüşmenin **610** `issue_statement` değeri FLAN-T5 çıktısı, **263** değeri açıkça işaretli kaynak metin fallback'i oldu. **0** boş issue var. 128 tokenlık odak penceresi nedeniyle **873** kaydın hepsinde `input_truncated=true`; bu, özgün `customer_text` alanının kesildiği anlamına gelmez. Artifact yaklaşık **2,63 MB** ve Git dışında. Bu sayılar çıkarımın çalıştığını gösterir, ifadelerin doğru problem etiketi olduğunu kanıtlamaz.
 
@@ -336,7 +549,7 @@ Sabit tohumlu 10-domain örnek incelemesinden bazı sonuçlar (müşteri metnini
 
 Bu 10 örnekte 6 model çıktısı ve 4 fallback vardı. `flan_t5` alanı yalnızca çıktının kaynağını belirtir; örneğin `leg leg leg` ve `au automatic` tekrarları kalite kusurudur. İlk denemelerde küçük model zaman zaman “No, I'm not sure” gibi problem olmayan yanıtlar verdi; açık kalıplar fallback'e yönlendirildi. Açıkça geçersiz olmayan ama yanlış/eksik bir ifade hâlâ kalabilir. Otomatik doğrulayıcı gerçek issue doğruluğunu ölçemez.
 
-### Aynı K adaylarıyla kümeleme karşılaştırması
+#### Aynı K adaylarıyla kümeleme karşılaştırması
 
 Issue metinleri MiniLM ile **(873, 384)** vektöre dönüştürüldü. Aşağıdaki sayılar son artifact ve aynı Phase 5 aday ayarlarıyla gerçek koşudan geldi:
 
@@ -397,7 +610,7 @@ Her seçili kümeden ilk betimleyici terimler, en çok görülen domainler ve me
 
 Issue ifadeleri bazı dar talepleri görünür kılıyor; örneğin koltuk değişikliği ile ek bagaj farklı kümelerde. Buna karşılık **seçilen silhouette daha düşük** ve K=16'da issue temsili 21–105 ile ham metnin 35–75 aralığından daha dengesiz. Kümelerin bir kısmı hâlâ geniş konuları veya modelin yanlış/genel çıktısını yakalıyor. **Farklı temsillerde silhouette farkı gerçek problem doğruluğu veya “LLM daha iyi” kanıtı değildir.** Doğrulanmış issue etiketleri ve insan değerlendirmesi olmadan hangi kümenin gerçek tekrarlayan problem olduğunu bilemeyiz. 263 fallback'in de kısa ama kısmen ham transcript alıntısı olduğunu unutmayın; sonuç saf FLAN-T5 çıktısı değildir.
 
-## Phase 9: tutarlı analiz servisi
+### Phase 9: tutarlı analiz servisi
 
 **Training (eğitim)** sırasında TF-IDF, eğitim metinlerinde hangi sözcüklerin bulunduğunu öğrenir; Logistic Regression bu sözcüklerden `domain` tahmini yapacak ağırlıkları öğrenir. **Inference/serving (çıkarım/sunma)** sırasında API yeni müşteri metnini bu hazır modelden geçirir. Tek bir API isteği modeli yeniden eğitmez. Modelin eğitimde gördüğü girdi türü ile API'de aldığı girdi türü farklıysa buna **training-serving skew** veya **training-serving mismatch** denir. Phase 7'de model müşteri ve temsilci metinlerini birlikte görürken API'de yalnız müşteri metni geliyordu. Müşteri tarafındaki sorunu erken anlamak istediğimiz için Phase 9 aynı TF-IDF + Logistic Regression yöntemini yalnız `customer_text` kullanacak şekilde yeniden değerlendirir ve eğitir. Önceki iki taraflı modelin sonuçları tarihsel karşılaştırma olarak korunur; farklı girdilerle elde edilen skorları aynı deneymiş gibi yorumlamayın.
 
@@ -420,7 +633,7 @@ Tekli `POST /api/v1/analyze` yanıtında `domain`, `domain_confidence`, `semanti
 
 **API versioning**, adreslerdeki `/api/v1/` bölümüdür. İleride istek veya yanıt yapısı uyumsuz biçimde değişirse yeni bir sürüm açarak eski istemcilerin mevcut sözleşmeyi kullanmasına imkân verir. Bu sürüm numarası modelin eğitim sürümüyle aynı şey değildir. `/health` ve `/ready` işletim kontrolleridir; analiz endpointleri `/api/v1/` altında kalır.
 
-### Ana sunum akışı ve ayrı deneyler
+#### Ana sunum akışı ve ayrı deneyler
 
 ```text
 Client
@@ -443,7 +656,7 @@ Ayrı çevrimdışı deney: customer_text → FLAN-T5 → issue_statement → Mi
 
 Ana API, Phase 5'teki **ham müşteri metni → MiniLM → K-Means K=16** akışını kullanır. Phase 8 FLAN-T5 çalışması ayrı bir çevrimdışı deney olarak korunur ve `/api/v1/analyze` içine bağlanmaz. Bu kararda yalnız silhouette sayısına bakılmadı: 873 kaydın 263'ünde fallback gerekmesi, bazı üretilmiş ifadelerin genel ya da tekrarlı olması, belirli sorunları daha dar gruplama kazanımı ve API'ye yeni bir üretici model koymanın işlem yükü birlikte değerlendirildi. Daha iyi gerçek issue tespiti iddiası için doğrulanmış etiket ve insan incelemesi gerekir. Erken uyarı demo zamanları da sentetiktir; dataset'te gerçek çağrı zaman damgası yoktur.
 
-### Phase 9'u PowerShell'de çalıştırma
+#### Phase 9'u PowerShell'de çalıştırma
 
 Proje kökünden çalışın. İlk artifact üretimi Hugging Face verisine, MiniLM'nin ilk kullanımı model indirmeye ihtiyaç duyabilir. Domain artifact'ini eski iki taraflı modelden müşteri metni sözleşmesine geçirmek için eğitim komutunu yeniden çalıştırın.
 
@@ -483,3 +696,9 @@ Start-Process http://127.0.0.1:8000/docs
 ```
 
 `/docs` sayfası endpointleri ve istek/yanıt şemalarını etkileşimli gösterir. Batch yanıtının her öğesini kendi girdi sırasıyla karşılaştırın. Buradaki üç örnek sırasıyla telecom, banking ve aviation konusunda yazılmıştır; model tahmininin bu etiketleri kesin vermesi garanti değildir. API'de gerçek zamanlı olay alımı, kalıcı veritabanı, authentication veya canlı uyarı akışı bulunmaz.
+
+## Mülakat özeti / Interview summary
+
+**Türkçe:** SignalDesk AI, müşteri destek görüşmelerini önce doğru çağrılara eşleştirip müşteri metninden hizmet alanı ve anlamsal küme üreten uçtan uca bir AI/ML öğrenme projesidir. 873 görüşmede müşteri metni domain modeli 0.8400 accuracy ve 0.8031 macro F1 elde etti; MiniLM + K-Means K=16 hattının cosine silhouette değeri 0.2070 oldu. FastAPI ve bağımlılıksız dashboard gerçek model sonuçlarını gösterir. Erken uyarı zamanı yalnızca sentetik demodur; gerçek timestamp ve doğrulanmış issue etiketi yoktur.
+
+**English:** SignalDesk AI is an end-to-end AI/ML learning project that pairs call-center channels into conversations and analyzes customer text for a service domain and a semantic cluster. On 873 conversations, the customer-only domain classifier reached 0.8400 accuracy and 0.8031 macro F1; MiniLM with K-Means K=16 reached a 0.2070 cosine silhouette score. A FastAPI service and dependency-free dashboard display actual model output. Early-warning timestamps are synthetic, and the dataset has no validated issue labels.

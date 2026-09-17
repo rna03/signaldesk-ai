@@ -72,7 +72,19 @@ class SignalDeskService:
                 "Semantic clusterer artifact is missing. Run python -m signaldesk.clustering.discover_issues_semantic."
             )
         try:
-            return load(self.clusterer_path)
+            clusterer = load(self.clusterer_path)
+            centers = np.asarray(clusterer.cluster_centers_)
+            if (
+                not callable(getattr(clusterer, "predict", None))
+                or not isinstance(clusterer.n_clusters, int)
+                or not isinstance(clusterer.n_features_in_, int)
+                or clusterer.n_clusters < 1
+                or clusterer.n_features_in_ < 1
+                or centers.shape != (clusterer.n_clusters, clusterer.n_features_in_)
+                or not np.isfinite(centers).all()
+            ):
+                raise ValueError("Invalid clusterer artifact")
+            return clusterer
         except Exception as exc:
             raise ServiceUnavailable("Semantic clusterer artifact cannot be read. Regenerate it with the Phase 5 script.") from exc
 
@@ -174,8 +186,16 @@ class SignalDeskService:
             raise ServiceUnavailable(
                 "Synthetic demo artifact is missing. Run python -m signaldesk.monitoring.detect_emerging_issues."
             )
-        result = json.loads(self.demo_path.read_text(encoding="utf-8"))
-        if result.get("temporal_mode") != "synthetic_demo" or result.get("is_real_time") is not False:
+        try:
+            result = json.loads(self.demo_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise ServiceUnavailable("Synthetic demo artifact cannot be read. Regenerate it with the Phase 6 script.") from exc
+        if (
+            not isinstance(result, dict)
+            or result.get("temporal_mode") != "synthetic_demo"
+            or result.get("is_real_time") is not False
+            or not isinstance(result.get("alerts"), list)
+        ):
             raise ServiceUnavailable("Synthetic demo artifact is invalid. Regenerate it with the Phase 6 script.")
         return result
 

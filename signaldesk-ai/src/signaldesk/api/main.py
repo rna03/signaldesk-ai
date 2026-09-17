@@ -1,8 +1,11 @@
 """Small HTTP routes; reusable analysis stays in services.py."""
 
 import logging
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from signaldesk.api.schemas import (
     AnalyzeRequest,
@@ -18,11 +21,18 @@ from signaldesk.monitoring.detect_emerging_issues import SEMANTIC_CLUSTER_COUNT
 
 
 logger = logging.getLogger(__name__)
+FRONTEND_DIR = Path(__file__).resolve().parents[3] / "frontend"
 app = FastAPI(
     title="SignalDesk AI API",
     description="Customer issue intelligence and early-warning API",
     version="0.1.0",
 )
+app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
+
+
+@app.get("/", include_in_schema=False)
+def dashboard() -> FileResponse:
+    return FileResponse(FRONTEND_DIR / "index.html")
 
 
 @app.get("/health")
