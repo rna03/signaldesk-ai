@@ -5,4 +5,6 @@ __pycache__/
 .env
 .env.*
 artifacts/*.joblib
+artifacts/semantic_cluster_metadata.json
+artifacts/early_warning_demo.json
 .cache/

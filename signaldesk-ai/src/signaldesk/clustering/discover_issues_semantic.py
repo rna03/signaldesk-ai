@@ -1,9 +1,12 @@
 """Hazır cümle embeddingleriyle müşteri görüşmelerini keşif amaçlı kümele."""
 
 from collections import Counter
+import json
+from pathlib import Path
 
 import numpy as np
 from datasets import load_dataset
+from joblib import dump
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 
@@ -23,6 +26,9 @@ SANITY_SENTENCES = (
     "My connection drops every few minutes.",
     "I need to change my flight seat.",
 )
+ARTIFACT_DIR = Path(__file__).resolve().parents[3] / "artifacts"
+CLUSTERER_PATH = ARTIFACT_DIR / "semantic_clusterer.joblib"
+METADATA_PATH = ARTIFACT_DIR / "semantic_cluster_metadata.json"
 
 
 def load_embedding_model():
@@ -65,7 +71,7 @@ def aggregate_chunk_embeddings(chunk_vectors, owners, token_counts, conversation
     return (pooled / norms[:, None]).astype(np.float32)
 
 
-def encode_full_conversations(model, texts):
+def encode_full_conversations(model, texts, verbose=True):
     """Model sınırını aşan özgün metni parçalara ayırıp tek görüşme vektörüne topla."""
     special_tokens = model.tokenizer.num_special_tokens_to_add(pair=False)
     chunk_size = model.max_seq_length - special_tokens - 8  # Yeniden tokenleştirmeye küçük pay.
@@ -87,15 +93,17 @@ def encode_full_conversations(model, texts):
             chunks.append(model.tokenizer.decode(piece, skip_special_tokens=True, clean_up_tokenization_spaces=False))
             owners.append(index)
             weights.append(len(piece))
-    print(f"Model sınırını aşan customer_text sayısı: {over_limit}")
-    print(f"Toplam metin parçası: {len(chunks)}; görüşme başına en çok parça: {max_chunks}")
+    if verbose:
+        print(f"Model sınırını aşan customer_text sayısı: {over_limit}")
+        print(f"Toplam metin parçası: {len(chunks)}; görüşme başına en çok parça: {max_chunks}")
     encoded_lengths = model.tokenizer(
         chunks, add_special_tokens=True, truncation=False,
         return_length=True, return_attention_mask=False, verbose=False,
     )["length"]
     if max(encoded_lengths) > model.max_seq_length:
         raise ValueError("En az bir yeniden tokenleştirilmiş parça model sınırını aşıyor.")
-    print("Parça embeddingleri üretiliyor; model ağırlıkları eğitilmiyor...")
+    if verbose:
+        print("Parça embeddingleri üretiliyor; model ağırlıkları eğitilmiyor...")
     chunk_vectors = encode_texts(model, chunks)
     return aggregate_chunk_embeddings(chunk_vectors, owners, weights, len(texts))
 
@@ -212,19 +220,34 @@ def main():
     # Bu ayrı TF-IDF matrisi kümeleme bittikten SONRA yalnızca insan yorumu içindir.
     vectorizer = make_vectorizer()
     description_matrix = vectorizer.fit_transform(texts)
+    cluster_terms = {}
     for cluster_id in range(selected["k"]):
         members = np.flatnonzero(labels == cluster_id)
         domains = Counter(conversations[index]["domain"] for index in members)
         print(f"\nCluster {cluster_id}")
         print(f"Conversation count: {len(members)}")
-        print("Descriptive top terms:", ", ".join(
-            descriptive_top_terms(description_matrix, vectorizer, labels, cluster_id)
-        ))
+        cluster_terms[str(cluster_id)] = descriptive_top_terms(
+            description_matrix, vectorizer, labels, cluster_id
+        )
+        print("Descriptive top terms:", ", ".join(cluster_terms[str(cluster_id)]))
         print("Domain dağılımı (yalnızca analiz):", dict(domains.most_common()))
         print("Merkeze en yakın 3 gerçek customer_text önizlemesi:")
         for index in representative_indices(matrix, labels, cluster_model.cluster_centers_, cluster_id):
             preview = texts[index].replace("\n", " ")[:180]
             print(f"  [{conversations[index]['domain']}] {preview}...")
+
+    # Aynı koşudaki fitted model ve betimleyici terimler birlikte yeniden üretilir.
+    ARTIFACT_DIR.mkdir(exist_ok=True)
+    dump(cluster_model, CLUSTERER_PATH)
+    METADATA_PATH.write_text(json.dumps({
+        "embedding_model": MODEL_NAME,
+        "cluster_count": selected["k"],
+        "embedding_dimension": int(matrix.shape[1]),
+        "conversation_count": len(conversations),
+        "descriptive_terms": cluster_terms,
+    }, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"Semantic clusterer saved: {CLUSTERER_PATH}")
+    print(f"Cluster metadata saved: {METADATA_PATH}")
 
     print("\nPhase 4 vs Phase 5:")
     print(

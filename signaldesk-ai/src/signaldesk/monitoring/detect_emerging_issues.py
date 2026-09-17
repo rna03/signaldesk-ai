@@ -2,11 +2,13 @@
 
 from collections import Counter
 from datetime import datetime, timedelta, timezone
+import json
 from random import Random
 from statistics import mean, pstdev
 
 from signaldesk.clustering.discover_issues import make_vectorizer
 from signaldesk.clustering.discover_issues_semantic import (
+    ARTIFACT_DIR,
     MODEL_NAME,
     cluster_embeddings,
     descriptive_top_terms,
@@ -28,6 +30,7 @@ ANOMALY_THRESHOLD = 3.0
 MIN_EVENT_COUNT = 8
 SURGE_HOURS = 2
 SURGE_EVENT_LIMIT = 30
+DEMO_ARTIFACT_PATH = ARTIFACT_DIR / "early_warning_demo.json"
 
 
 def synthetic_events(conversations, labels, start=DEMO_START, hours=DEMO_HOURS, seed=RANDOM_SEED):
@@ -200,6 +203,24 @@ def main():
         for event in matching[:3]:
             index = event["conversation_index"]
             print(f"  {texts[index].replace(chr(10), ' ')[:180]}...")
+
+    # API yalnızca yapılandırılmış sentetik sonucu okur; gerçek transcript dışa aktarılmaz.
+    ARTIFACT_DIR.mkdir(exist_ok=True)
+    DEMO_ARTIFACT_PATH.write_text(json.dumps({
+        "temporal_mode": "synthetic_demo",
+        "is_real_time": False,
+        "alerts": [
+            {
+                **alert,
+                "timestamp": alert["timestamp"].isoformat(),
+                "descriptive_terms": descriptive_top_terms(
+                    description_matrix, vectorizer, labels, alert["cluster_id"]
+                ),
+            }
+            for alert in alerts
+        ],
+    }, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"Structured synthetic demo saved: {DEMO_ARTIFACT_PATH}")
 
 
 if __name__ == "__main__":

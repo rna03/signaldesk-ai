@@ -1,4 +1,4 @@
-# SignalDesk AI — Phase 1, 2, 3, 4, 5 ve 6
+# SignalDesk AI — Phase 1–7
 
 SignalDesk AI'ın uzun vadeli amacı, müşteri destek görüşmelerindeki tekrar eden ve çözülmeyen sorunları fark edip olağandışı artışları erken göstermektir. İlk iki aşama yalnızca gerçek veri kümesinin yapısını inceler ve aynı görüşmenin iki kaydını bir araya getirir; model eğitmez.
 
@@ -45,8 +45,13 @@ Gerçek veriyle doğrulanan özet: `test` split'inde 1.746 satır, 873 benzersiz
 - `src/signaldesk/monitoring/__init__.py`: zaman temelli erken uyarı denemelerinin Python paketini tanımlar.
 - `src/signaldesk/monitoring/detect_emerging_issues.py`: Phase 5'in gerçek görüşme, embedding ve K=16 kümeleme işlevlerini yeniden kullanır. `synthetic_events()` yalnızca demo zamanı ekler; `inject_synthetic_surge()` mevcut olayları son saatlere taşır. `aggregate_hourly()` boş saatleri sıfırla doldurur. `score_bucket()` mevcut saati dışarıda tutarak geçmiş ortalama ve standart sapmayı hesaplar. `detect_alerts()` geçmiş, asgari olay sayısı ve z-score koşullarını birlikte uygular.
 - `tests/test_emerging_issue_detection.py`: saatlik sayım, geçmiş sızıntısı, sıfır standart sapma, eşikler, normal seri, sıçrama ve deterministik sentetik zamanları internetsiz sınar.
-- `requirements.txt`: bu aşamada gereken `datasets`, `pandas`, `pytest` paketlerini listeler. Pandas henüz veri işlemese de sonraki veri keşfi çalışmaları için erişimi test edilir.
-- `.gitignore`: sanal ortam, Python önbelleği ve yerel `.env` dosyalarını Git dışında tutar.
+- `src/signaldesk/api/__init__.py`: API alt paketini tanımlar.
+- `src/signaldesk/api/schemas.py`: Pydantic istek ve yanıt şekillerini tanımlar. `nonempty_text()` boşluklardan ibaret girdiyi reddeder, geçerli metnin asıl değerini değiştirmez.
+- `src/signaldesk/api/services.py`: Phase 3 modelini, Phase 5 hazır embedding modelini ve kaydedilmiş fitted K-Means'i gerektiğinde bir kez yükler. `analyze()` mevcut yardımcıları çağırır; `demo_alerts` yalnızca Phase 6'nın yapılandırılmış sentetik sonucunu okur.
+- `src/signaldesk/api/main.py`: HTTP route'larını tanımlar. Her route isteği alır, servisi çağırır ve JSON yanıtı döner; ML işlemi route içine yazılmaz. Beklenen eksik artifact 503, beklenmeyen hata güvenli 500 yanıtı olur.
+- `tests/test_api.py`: `TestClient` ve sahte servisle HTTP sözleşmesini, boş metin reddini, 503 ve güvenli 500 yanıtını internet olmadan sınar.
+- `requirements.txt`: veri/ML bağımlılıklarına ek olarak API için yalnızca `fastapi` ve `uvicorn` ekler. Pydantic FastAPI bağımlılığı olarak gelir.
+- `.gitignore`: sanal ortamı, önbelleği, sır içerebilen `.env` dosyalarını ve yeniden üretilebilir yerel model/demo artifact'lerini Git dışında tutar.
 
 ## Windows PowerShell'de çalıştırma
 
@@ -69,6 +74,7 @@ python -m signaldesk.clustering.discover_issues
 python -m signaldesk.clustering.discover_issues_semantic
 python -m signaldesk.monitoring.detect_emerging_issues
 python -m pytest -q
+python -m uvicorn signaldesk.api.main:app --reload
 ```
 
 Bilgisayarınızda Python 3.12 yoksa ve 3.11 varsa `py -3.11 -m venv .venv` kullanın. `PYTHONPATH`, `src` içindeki paketin kurulum paketi oluşturmadan import edilmesini sağlar. Yeni bir PowerShell oturumunda testi veya betiği tekrar çalıştırırken bu satırı tekrar girin.
@@ -136,7 +142,7 @@ K-Means'e verilen girdiler yalnızca müşteri metninin embeddingleridir. `agent
 
 Bu genel amaçlı model SignalDesk çağrılarına özel eğitilmedi. [Model kartına göre](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2), uzun girdiler varsayılan olarak 256 word piece sonrasında kesilir. Gerçek veride görüşmelerin çoğu bu sınırı aştığından betik metni token sınırına sığan parçalara ayırır, her parçayı hazır modelle encode eder, parça uzunluğuna göre vektörleri ortalar ve görüşme vektörünü tekrar normalize eder. Böylece metnin sonu sessizce kaybolmaz; fakat basit ortalama uzun bir görüşmenin cümleler arası bağlamını bütünüyle koruyamaz. Kaynak transcript hiç değiştirilmez. Bu temsil, Phase 4'ün tam metin TF-IDF sonucuyla aynı tür özellikler üretmediğinden silhouette değerleri doğrudan kalite garantisi değildir. Domain dağılımı doğrulanmış problem etiketi değildir ve kümeler doğrulanmış müşteri problem kategorileri sayılmamalıdır.
 
-Model dosyaları varsayılan Hugging Face önbelleğinde tutulur; repoya eklenmez. Eğer önbellek proje altında oluşturulursa `.gitignore` içindeki `.cache/` kuralı onu dışlar. Betik müşteri verisini veya embeddingleri kalıcı CSV/JSON dosyasına yazmaz.
+Hazır model dosyaları varsayılan Hugging Face önbelleğinde tutulur; repoya eklenmez. Eğer önbellek proje altında oluşturulursa `.gitignore` içindeki `.cache/` kuralı onu dışlar. Phase 7 için betik, seçilen fitted K-Means'i `artifacts/semantic_clusterer.joblib` ve aynı koşudaki yalnızca betimleyici terimleri `artifacts/semantic_cluster_metadata.json` olarak yazar. Müşteri transcriptleri veya embedding matrisi kalıcı CSV/JSON'a yazılmaz. İki artifact birlikte yeniden üretilir ve birlikte kullanılmalıdır; Git ikisini de dışlar.
 
 ### Gerçek çalışma ve Phase 4 karşılaştırması
 
@@ -202,3 +208,59 @@ Açıklanabilir erken uyarı denemesi
 - **2026-01-02 23:00 UTC:** 16 olay; geçmiş ortalama **1,917**, standart sapma **4,349**, z-score **3,239**, artış oranı **8,35×**.
 
 Cluster 5'in gerçek örnekleri sezonluk ürün stok sorgusu, kıyafet bedeni ve iade gibi farklı perakende konularını içerebilir. Bu yüzden `size/jacket/return` terimleri kümeyi kesin bir “iade problemi” etiketi yapmaz. Ayrıca sentetik zamanlar gerçek trafik ritmini, toplam çağrı hacmindeki değişimi, hafta/gün mevsimselliğini veya olay çözüm durumunu temsil etmez. 12 saatlik basit baseline ve kontrollü enjeksiyonla elde edilen iki uyarı **production monitoring başarısı** değildir. Gerçek zaman damgalı görüşmeler ve insan doğrulamalı problem grupları olmadan erken uyarı kalitesi ölçülemez.
+
+## Phase 7: FastAPI ile model serving temeli
+
+**API (uygulama programlama arayüzü)**, başka bir programın SignalDesk'ten belirli bir biçimde sonuç istemesidir. **REST API**, bu örnekte HTTP adresleri ve yöntemleriyle çalışan basit arayüzdür. **Endpoint**, çağrılan adres ve yöntem ikilisidir: `GET /health` ile `POST /api/v1/analyze` farklı işlemlerdir. **HTTP GET**, bilgi okumak için kullanılır; `/api/v1/info` yapılandırmayı, `/api/v1/alerts/demo` sentetik uyarı sonucunu okur. **HTTP POST**, sunucuya yeni bir analiz girdisi gönderir; `/api/v1/analyze` verilen müşteri metnini analiz eder, fakat veritabanına kaydetmez.
+
+**Request (istek)**, istemcinin yolladığı HTTP çağrısıdır. Analyze isteğinin gövdesi örneğin `{"customer_text":"My internet keeps disconnecting."}` biçimindedir. **Response (yanıt)**, sunucunun döndürdüğü sonuç ve HTTP durum kodudur. **JSON**, bu anahtar/değer yapısının hem istek hem yanıt için kullanılan metin biçimidir. Analyze yanıtındaki `domain`, `semantic_cluster` ve `cluster_similarity` değerleri gerçek Phase 3/5 modellerinden hesaplanır.
+
+**FastAPI**, Python fonksiyonlarını HTTP endpointlerine bağlar ve Pydantic ile veri şekillerini denetler. **Uvicorn**, FastAPI uygulamasını yerel HTTP sunucusu olarak çalıştırır. **Pydantic validation**, gelen `customer_text` alanının bir metin olmasını ve yalnızca boşluk içermemesini denetler; yanlış istek model koduna geçmez. **HTTP 200** isteğin başarıyla işlendiğini, **422** gönderilen verinin şemaya uymadığını, **503** gerekli yerel artifact veya hazır modelin kullanılamadığını gösterir. Beklenmeyen işlem hataları güvenli **500** yanıtı verir; istemciye stack trace, yerel yol veya ortam bilgisi gönderilmez.
+
+**Model serving**, daha önce hazırlanmış modeli yeni girdiler için erişilebilir tutmaktır. Bu **inference API** yeni bir müşteri metninin domainini tahmin eder ve semantic kümesini belirler; burada yeniden eğitim veya K-Means fit işlemi yoktur. Domain modeli eğitimde `customer_text + agent_text` ile öğrenilmişti; API yalnızca `customer_text` alır. Bu girdi farkı özellikle kısa gerçek isteklerde domain tahminini etkileyebilir. **Lazy loading**, modeli ilk ihtiyaç duyulduğunda yüklemektir; `/health` ve `/api/v1/info` modelleri yüklemez. **Caching**, yüklenen Python nesnesini sonraki isteklerde yeniden kullanmaktır. Böylece her istekte diskteki joblib dosyasını veya büyük MiniLM modelini tekrar okumayız. Servis yeniden başlarsa önbellek de yeniden başlar.
+
+Yeni metin Phase 5 ile **aynı** parçalara ayırma ve vektör birleştirme işlevinden geçer. Kaydedilmiş fitted K-Means `predict()` ile küme seçer; request sırasında 873 görüşmeyi yeniden kümelemez. `cluster_similarity`, yeni metin vektörü ile seçilen merkezin cosine similarity değeridir; **probability değildir**. `cluster_descriptive_terms`, aynı Phase 5 koşusunda ayrı TF-IDF analizinden üretilen açıklayıcı sözcüklerdir; **semantic cluster doğrulanmış issue label değildir**. `domain_confidence` de kalibre edilmiş kesinlik değildir. Phase 6 endpointi `temporal_mode: "synthetic_demo"` ve `is_real_time: false` döndürür; gerçek zamanlı izleme değildir.
+
+```text
+Client
+  ↓ HTTP request
+FastAPI route
+  ↓ Pydantic validation
+SignalDesk service layer
+  ├── Phase 3 domain classifier (yerel artifact)
+  ├── Phase 5 hazır MiniLM embedding modeli
+  ├── Phase 5 fitted semantic clusterer + descriptive metadata
+  └── Phase 6 structured synthetic early-warning demo
+  ↓
+JSON response
+```
+
+### Yerel artifact'leri üretme ve API'yi çalıştırma
+
+Proje kökünde PowerShell açın. İlk iki analiz betiği Hugging Face verisine erişir; MiniLM'nin ilk kullanımı model indirmeyi gerektirebilir. Artık bir kez üretilen yerel artifact'ler servis başlangıcında gerekmez, yalnızca ilgili endpoint ilk çağrıldığında okunur.
+
+```powershell
+cd "C:\Users\Rana\Documents\ChatGPT\call center\signaldesk-ai"
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+$env:PYTHONPATH = (Resolve-Path .\src).Path
+python -m signaldesk.ml.train_domain_classifier
+python -m signaldesk.clustering.discover_issues_semantic
+python -m signaldesk.monitoring.detect_emerging_issues
+python -m pytest -q
+python -m uvicorn signaldesk.api.main:app --reload
+```
+
+`train_domain_classifier` mevcutsa yeniden çalıştırmak zorunlu değildir. Phase 5 betiği `semantic_clusterer.joblib` ve `semantic_cluster_metadata.json` dosyalarını **aynı koşuda** üretir; bunlardan birini başka koşudaki dosyayla eşleştirmeyin, çünkü küme ID'leri değişebilir. Phase 6 betiği küçük `early_warning_demo.json` dosyasına yalnızca sentetik zamanlı uyarı ölçülerini yazar; müşteri transcripti yazmaz. Bu üç yerel dosya ve domain modeli `artifacts/` altında tutulur ve Git tarafından ignore edilir. `.joblib` dosyalarını yalnızca kendi çalıştırdığınız güvenilir betikten yükleyin. Dosyalar eksikse ilgili endpoint 503 ile üretme komutunu söyler; uygulamanın açılması ve `/health` çalışması için bu dosyalar gerekmez.
+
+Sunucu çalışırken ayrı bir PowerShell'de:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8000/health
+Invoke-RestMethod http://127.0.0.1:8000/api/v1/info
+$body = @{ customer_text = "My internet keeps disconnecting every few minutes and the modem keeps losing connection." } | ConvertTo-Json
+Invoke-RestMethod http://127.0.0.1:8000/api/v1/analyze -Method Post -ContentType "application/json" -Body $body
+Invoke-RestMethod http://127.0.0.1:8000/api/v1/alerts/demo
+```
+
+Tarayıcıda [Swagger arayüzünü](http://127.0.0.1:8000/docs) açabilirsiniz. **OpenAPI**, endpointlerin istek ve yanıt şemalarını açıklayan makine tarafından okunabilir tanımdır; **Swagger UI** bunu sayfa olarak gösterir. Böylece endpointleri görebilir, örnek request gönderebilir ve response'u frontend yapmadan inceleyebilirsiniz. Bu API'de henüz authentication, kalıcı veritabanı veya real-time event ingestion yoktur; herkese açık CORS da eklenmedi. `--reload` geliştirme içindir.

@@ -3,3 +3,5 @@ pandas
 pytest
 scikit-learn
 sentence-transformers
+fastapi
+uvicorn
