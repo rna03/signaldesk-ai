@@ -5,3 +5,4 @@ scikit-learn
 sentence-transformers
 fastapi
 uvicorn
+transformers

@@ -1,4 +1,4 @@
-# SignalDesk AI — Phase 1–7
+# SignalDesk AI — Phase 1–8
 
 SignalDesk AI'ın uzun vadeli amacı, müşteri destek görüşmelerindeki tekrar eden ve çözülmeyen sorunları fark edip olağandışı artışları erken göstermektir. İlk iki aşama yalnızca gerçek veri kümesinin yapısını inceler ve aynı görüşmenin iki kaydını bir araya getirir; model eğitmez.
 
@@ -264,3 +264,135 @@ Invoke-RestMethod http://127.0.0.1:8000/api/v1/alerts/demo
 ```
 
 Tarayıcıda [Swagger arayüzünü](http://127.0.0.1:8000/docs) açabilirsiniz. **OpenAPI**, endpointlerin istek ve yanıt şemalarını açıklayan makine tarafından okunabilir tanımdır; **Swagger UI** bunu sayfa olarak gösterir. Böylece endpointleri görebilir, örnek request gönderebilir ve response'u frontend yapmadan inceleyebilirsiniz. Bu API'de henüz authentication, kalıcı veritabanı veya real-time event ingestion yoktur; herkese açık CORS da eklenmedi. `--reload` geliştirme içindir.
+
+## Phase 8: görüşmeden yapılandırılmış müşteri problemi çıkarma
+
+Phase 5, müşterinin uzun ve dolgu ifadeleri içeren dökümünü doğrudan embedding'e verdi. Bu, bazı kümelerde belirli problem yerine geniş hizmet alanını yakalayabiliyor. Phase 8'de **aynı görüşmeler için** önce kısa bir `issue_statement` üretiyoruz, sonra MiniLM ve K-Means'e yalnızca bu ifadeyi verip kontrollü karşılaştırma yapıyoruz. Kaynak `customer_text` aynen korunur. Bu çalışma yalnızca çevrimdışı deneydir; Phase 7'nin `POST /api/v1/analyze` davranışı değiştirilmedi.
+
+```text
+Phase 5: customer_text → MiniLM → embedding → K-Means
+
+Phase 8: customer_text → FLAN-T5 → issue_statement
+                                      ↓
+                                  MiniLM
+                                      ↓
+                              384-D embedding
+                                      ↓
+                                  K-Means
+                                      ↓
+                                issue cluster
+```
+
+**LLM (büyük dil modeli)**, çok sayıda metin örneğinden dil örüntüleri öğrenmiş model ailesidir; burada kullandığımız küçük FLAN-T5 de dil üreten bir transformer modelidir. **Generative model**, verilen girdiye karşılık yeni metin üretir: müşteri görüşmesinden örneğin “modem connection keeps dropping” gibi bir cümle yazması beklenir. **Transformer**, metindeki tokenların birbirleriyle ilişkisini işlemeye yarayan model mimarisidir. **Token**, tokenizer'ın metni böldüğü küçük sayısal birimdir; bir sözcük bir veya birkaç token olabilir. **Tokenizer**, metni modelin işleyebileceği token ID'lerine çevirir ve çıktıyı yeniden metne dönüştürür. **Hugging Face Transformers**, hazır model ve tokenizer'ı yükleyip `generate()` ile yerelde çalıştırmamızı sağlayan Python kütüphanesidir.
+
+**Prompt**, modele verilen açık yönerge ve müşteri metnidir. `build_prompt()` aynı kısa yönergeyi her görüşme için kurar: ana problemi tek cümleyle belirtmesini, çözüm/temsilci yanıtı eklememesini ve bilgi uydurmamasını ister. **Inference**, önceden öğrenilmiş ağırlıkları kullanarak yeni girdi için çıktı üretmektir. **Pretrained model**, ağırlıkları önceden hazırlanmış modeldir. **Fine-tuning**, bu ağırlıkları bizim veri kümesinde yeniden eğitmek olurdu. **Phase 8 does not train or fine-tune FLAN-T5.** [google/flan-t5-small](https://huggingface.co/google/flan-t5-small) seçildi: yönerge takip eden, yerelde CPU ile çalıştırılabilen küçük text-to-text modelidir; büyük model veya bulut API gerektirmez. Yine de 873 uzun görüşmede CPU çalışması zaman alır.
+
+**FLAN-T5 ile MiniLM farklı iş yapar:** FLAN-T5 yeni bir issue cümlesi **üretir**; MiniLM metni 384 boyutlu sayısal **embedding** vektörüne çevirir. Text generation çıktısı okunabilir kelimelerdir, embedding boyutları ise tek tek kelime veya doğrulanmış problem etiketi değildir. FLAN-T5'in küçük olması karmaşık konuşmaları kaçırmasına yol açabilir. **Hallucination (uydurma)**, modelin dökümde bulunmayan bir problem ayrıntısı yazmasıdır. Ayrıca gerçekten söylenen önemli bir bilgiyi atlayabilir. Bu nedenle üretilmiş `issue_statement`, **ground truth (doğrulanmış doğru cevap)** değildir; insan incelemesi gerekir.
+
+**Deterministic generation** için sampling kapalı (`do_sample=False`), greedy çözümleme (`num_beams=1`) ve üst çıktı sınırı 32 token kullanılır. Temperature verilmez. Aynı model, girdi ve ortamda sonuçları tekrar üretmeye yardımcı olur; farklı kütüphane/model sürümleri veya donanım mutlak bit eşitliği garantilemez. Modelin 512 tokenlık konum sınırının altında, bu deney için bilinçli bir **128 token girdi penceresi** kullanılır. Betik `calling about`, `looking for`, `I'd like to` gibi ilk açık istek ifadesini bulursa model girdisini o ifadenin hemen önünden başlatıp en fazla yaklaşık 45 sözcüklük parçayı alır; böyle bir ifade yoksa konuşmanın başından ilerler. Bu basit seçim yanlış ifadeye odaklanabilir veya daha sonra söylenen asıl sorunu kaçırabilir. Tokenizer, pencereyi **truncation kapalıyken** ölçer, prompta yer ayırır ve gerçekten modele verilen son dizinin sınıra sığdığını denetler. Kaynak transcript aynen korunur; model girdisinden bir kısım çıkarıldıysa `input_truncated=true` kaydedilir. Model boş, yalnız dolgu/sayı kodu içeren, çok kısa veya açıkça genel yanıt kalıbı olan çıktı verirse ilk seçilen kaynak cümleden en çok 180 karakterlik alıntı kullanılır ve `issue_source="fallback"` yazılır; bu FLAN-T5 üretimi gibi sunulmaz. Diğer kayıtlarda `issue_source="flan_t5"` olur. Çıktıya yalnızca baş/son boşluk ve fazla boşluk temizliği uygulanır; stemming, stopword çıkarma veya agresif temizleme yapılmaz.
+
+### Dosyalar ve yeniden üretme
+
+- `src/signaldesk/issues/__init__.py`: issue çıkarımı paketini tanımlar.
+- `src/signaldesk/issues/extract_issues.py`: `build_prompt()` yönergeyi tek yerde tutar. `prepare_prompt()` token sınırını kontrol eder. `IssueExtractor` tokenizer/modeli ilk kullanımda yükleyip aynı nesneleri sonraki batch'lerde kullanır. `select_domain_sample()` 10 farklı domainden tekrarlanabilir örnek seçer. `extract_conversations()` özgün metni ve `issue_source` alanını kayda koyar. `write_artifact()` yalnız tam koşuda yerel JSON yazar; `load_artifact()` eksik veya uyumsuz dosyayı reddeder.
+- `src/signaldesk/clustering/discover_extracted_issues_semantic.py`: kayıtların **yalnızca `issue_statement`** alanını Phase 5'in aynı MiniLM, chunking, K adayları, K-Means ve seçim kuralıyla kümelemeye verir. Üst terimler ayrı TF-IDF hesabıyla kümeleme bittikten sonra bulunur; domain yalnızca yorumlama içindir.
+- `tests/test_issue_extraction.py` ve `tests/test_extracted_issue_clustering.py`: sahte tokenizer/model ve küçük sentetik kayıtlarla promptu, sınırı, fallback'i, örnek seçimini, artifact'i ve doğru kümeleme girdisini internetsiz denetler.
+- `requirements.txt`: doğrudan kullanılan `transformers` paketini ekler. PyTorch zaten `sentence-transformers` bağımlılığıyla kurulduğu için tekrar eklenmedi.
+- `.gitignore`: `artifacts/extracted_issues.json` dosyasını Git dışında tutar. Bu JSON tam müşteri dökümlerini de içerir; repoya commit edilmez.
+
+Proje kökünde PowerShell:
+
+```powershell
+cd "C:\Users\Rana\Documents\ChatGPT\call center\signaldesk-ai"
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+$env:PYTHONPATH = (Resolve-Path .\src).Path
+python -m pytest -q
+python -m signaldesk.issues.extract_issues --sample
+python -m signaldesk.issues.extract_issues --full
+python -m signaldesk.clustering.discover_extracted_issues_semantic
+```
+
+İlk örnek koşusu Hugging Face'ten public veri ve hazır model indirebilir; API key gerekmez. `--sample` dosya yazmaz. Örneklerin üretilen problem cümlelerini gözle inceleyin, sonra `--full` ile 873 kaydı `artifacts/extracted_issues.json` içine yeniden üretin. Dosyada model, prompt sürümü ve generation ayarları da bulunur. Son komut yalnız bu artifact'i okuyarak issue tabanlı kümeleme yapar; FLAN-T5'i tekrar çalıştırmaz. Kümeleme etiketsizdir: silhouette temsil uzayındaki ayrımı ölçer, gerçek problem doğruluğunu ölçmez. `domain` etiketleri issue etiketi değildir. Phase 6 zaman damgaları hâlâ sentetiktir. Bu bir production LLM sistemi değildir.
+
+### Gerçek veri koşusu ve örnek inceleme
+
+Bu makinede PyTorch CPU sürümüyle son `--full` koşusu, **model yüklemesi dahil 119,80 saniye** sürdü. **873** görüşmenin **610** `issue_statement` değeri FLAN-T5 çıktısı, **263** değeri açıkça işaretli kaynak metin fallback'i oldu. **0** boş issue var. 128 tokenlık odak penceresi nedeniyle **873** kaydın hepsinde `input_truncated=true`; bu, özgün `customer_text` alanının kesildiği anlamına gelmez. Artifact yaklaşık **2,63 MB** ve Git dışında. Bu sayılar çıkarımın çalıştığını gösterir, ifadelerin doğru problem etiketi olduğunu kanıtlamaz.
+
+Sabit tohumlu 10-domain örnek incelemesinden bazı sonuçlar (müşteri metninin yalnız kısa açıklaması; tam metin `--sample` terminal çıktısında görünür):
+
+| Domain | Kaynak müşteri talebinin kısa görünümü | Issue statement | Kaynak |
+|---|---|---|---|
+| agriculture | Kuraklığa dayanıklı tohum stokunu soruyor | `i need to know if you have any of those drought resistant seed` | flan_t5 |
+| aviation | Diz ameliyatı nedeniyle daha fazla bacak alanlı koltuk istiyor | `I'd like to request a seat with extra leg leg leg room` | flan_t5 |
+| banking | Hesaplar arasında otomatik aylık transfer kurmak istiyor | `I want to set up an au automatic monthly transfer between the two` | flan_t5 |
+| deliveryservice | Paket iki gün önce gelmeliydi | `a package that I had purchased was supposed to arrive two days ago` | flan_t5 |
+| energy | Yeni eve elektrik hizmeti istiyor | `I'm just looking for a new electricity service as a new home owner.` | fallback |
+| entertainment | VIP geçiş bilgisini çevrim içi bulamıyor | `passes, (uh) can't find anything about that online, just the basic ticket.` | fallback |
+| finance | Emeklilik yatırım hesabı açmayı soruyor | `How to open a retirement savings account` | flan_t5 |
+| food | Doğum günü için deluxe yemek paketi soruyor | `a deluxe package` | flan_t5 |
+| health | Doktorla takip randevusu istiyor | `I, I'm calling about (uh) sc~ scheduling a follow-up appointment with my doctor, Dr Payne.` | fallback |
+| hospitality | Erken giriş istiyor | `was just wondering if I could request an early check-in.` | fallback |
+
+Bu 10 örnekte 6 model çıktısı ve 4 fallback vardı. `flan_t5` alanı yalnızca çıktının kaynağını belirtir; örneğin `leg leg leg` ve `au automatic` tekrarları kalite kusurudur. İlk denemelerde küçük model zaman zaman “No, I'm not sure” gibi problem olmayan yanıtlar verdi; açık kalıplar fallback'e yönlendirildi. Açıkça geçersiz olmayan ama yanlış/eksik bir ifade hâlâ kalabilir. Otomatik doğrulayıcı gerçek issue doğruluğunu ölçemez.
+
+### Aynı K adaylarıyla kümeleme karşılaştırması
+
+Issue metinleri MiniLM ile **(873, 384)** vektöre dönüştürüldü. Aşağıdaki sayılar son artifact ve aynı Phase 5 aday ayarlarıyla gerçek koşudan geldi:
+
+| K | Cosine silhouette | En küçük küme | En büyük küme |
+|---:|---:|---:|---:|
+| 8 | 0.0782 | 68 | 192 |
+| 12 | 0.0804 | 27 | 159 |
+| 16 | 0.0951 | 21 | 105 |
+| 20 | 0.0972 | 19 | 69 |
+| 24 | 0.1001 | 16 | 82 |
+| 30 | **0.1074** | 11 | 50 |
+
+Phase 5 ile aynı denge kuralı uygulandı: en küçük küme en az 5 kayıt, en büyük küme toplamın en çok %20'si; uygun en iyi silhouette değerinin 0.005 yakınındaki **en küçük K** seçilir. Bu koşuda **K=30**, çünkü K=24'ün 0.1001 skoru en iyi 0.1074'ün 0.005 altında değil. Seçilen küme boyutları **11–50**. K=30 gerçek issue türü sayısı değildir.
+
+Her seçili kümeden ilk betimleyici terimler, en çok görülen domainler ve merkeze yakın bir **gerçek issue_statement** aşağıdadır. Bunlar otomatik doğrulanmış konu adları değildir. Betik çalıştırıldığında her küme için üç temsilciyi ve daha fazla terimi basar.
+
+| Küme | Boyut | Betimleyici terimler | Baskın domainler | Temsilci issue statement |
+|---:|---:|---|---|---|
+| 0 | 19 | event, special, small | food 8; hospitality 5 | `a small office event` |
+| 1 | 29 | plan, like, want | finance 7; telecom 7 | `I'd like to upgrade my plan` |
+| 2 | 27 | cancel, reservation, hotel | hospitality 16; travel 4 | `I need to cancel the reservation.` |
+| 3 | 30 | catering, corporate, party | food 29; hospitality 1 | `I'm looking for catering services for a birthday party.` |
+| 4 | 29 | appointment, schedule, doctor | health 28; food 1 | `I'm calling to schedule up a follow-up appointment with my doctor.` |
+| 5 | 50 | account, savings, transfer | banking 42; finance 6 | `id like to transfer my savings to my checking account` |
+| 6 | 36 | supposed, early, arrive | deliveryservice 5; hospitality 5 | `It was supposed to arrive yesterday.` |
+| 7 | 36 | service, internet, electricity | energy 16; telecom 10 | `I was calling to make sure that I could get new service at my new home.` |
+| 8 | 35 | issue, didn't, work | retail 7; technology 7 | `No, it's not working.` |
+| 9 | 44 | need, want, size | retail 9; energy 4 | `I need them` |
+| 10 | 17 | organic, farm, certification | agriculture 17 | `if we would like to do a farm that is totally organic?` |
+| 11 | 13 | irrigation, water, drip | agriculture 12; energy 1 | `I'm just calling about the (uh,) subsidies for drip drip irrigation.` |
+| 12 | 37 | laptop, problem, crashing | technology 19; retail 6 | `I have a problem with my laptop.` |
+| 13 | 44 | tickets, vip, passes | entertainment 40; travel 2 | `i'm looking for a ticket for the VIP seating` |
+| 14 | 22 | package, send, delivery | deliveryservice 22 | `I need to send the package to my cousin in (uh) other city.` |
+| 15 | 38 | calling, jacket, return | retail 21; deliveryservice 14 | `I'm just calling because I've got a request to return (uh) a jacket I recently purchased.` |
+| 16 | 21 | drive, house, london | realestate 6; energy 4 | `I'm just calling to inquire about an apartment in the Glasgow area` |
+| 17 | 20 | flight, change, date | aviation 16; hospitality 2 | `I need to change my return flight to a later date.` |
+| 18 | 16 | vegetarian, meal, request | food 6; aviation 5 | `i want to request a vegetarian meal` |
+| 19 | 34 | apartment, rental, bedroom | realestate 28; travel 3 | `Hello, I'm looking for a furnished apartment.` |
+| 20 | 11 | seat, change, upgrade | aviation 8; entertainment 2 | `i need to change my seat` |
+| 21 | 18 | insurance, claim, car | insurance 17; aviation 1 | `I'm calling to file a new car insurance claim.` |
+| 22 | 41 | looking, stock, buy | retail 20; deliveryservice 4 | `I was looking for is out of stock.` |
+| 23 | 37 | need, pay, charge | finance 7; banking 6 | `I need to pay the bills` |
+| 24 | 50 | sure, sorry, issue | entertainment 6; retail 5 | `I'm not sure what I'm doing.` |
+| 25 | 29 | attend, anymore, make | entertainment 11; hospitality 4 | `I can't attend anymore.` |
+| 26 | 13 | room, upgrade, special | hospitality 8; insurance 2 | `I need to upgrade my room` |
+| 27 | 21 | condition, doctor, medical | health 10; insurance 3 | `I have a chronic condition` |
+| 28 | 38 | book, package, vacation | travel 25; aviation 4 | `I want to book a vacation package to the Biggs Theme Park` |
+| 29 | 18 | add, extra, bag | aviation 11; insurance 3 | `I need to add a second bag.` |
+
+| Karşılaştırma | Phase 5: ham `customer_text` | Phase 8: çıkarılmış `issue_statement` |
+|---|---|---|
+| MiniLM ve K-Means girdisi | Tam konuşma, token parçalarının ortalaması | Kısa üretilmiş ifade veya açık fallback alıntısı |
+| Seçilen K | 16 | 30 |
+| Seçilen cosine silhouette | **0.2070** | **0.1074** |
+| Küme boyutu | 35–75 | 11–50 |
+| Belirgin örnek | Perakende kümesinde beden/stok/iade birlikte | Otel iptali (2), uçuş tarihi değişikliği (17), ek bagaj (29) daha dar görünüyor |
+| Sorunlu örnek | Geniş domain/konu karışımları | Genel “I'm not sure” cümleleri küme 24'te; 8, 9 ve 15 de farklı sorunları karıştırıyor |
+
+Issue ifadeleri bazı dar talepleri görünür kılıyor; örneğin koltuk değişikliği ile ek bagaj farklı kümelerde. Buna karşılık **seçilen silhouette daha düşük** ve K=16'da issue temsili 21–105 ile ham metnin 35–75 aralığından daha dengesiz. Kümelerin bir kısmı hâlâ geniş konuları veya modelin yanlış/genel çıktısını yakalıyor. **Farklı temsillerde silhouette farkı gerçek problem doğruluğu veya “LLM daha iyi” kanıtı değildir.** Doğrulanmış issue etiketleri ve insan değerlendirmesi olmadan hangi kümenin gerçek tekrarlayan problem olduğunu bilemeyiz. 263 fallback'in de kısa ama kısmen ham transcript alıntısı olduğunu unutmayın; sonuç saf FLAN-T5 çıktısı değildir.

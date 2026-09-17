@@ -7,4 +7,5 @@ __pycache__/
 artifacts/*.joblib
 artifacts/semantic_cluster_metadata.json
 artifacts/early_warning_demo.json
+artifacts/extracted_issues.json
 .cache/
