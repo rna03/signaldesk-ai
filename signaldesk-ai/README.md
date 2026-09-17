@@ -1,4 +1,4 @@
-# SignalDesk AI — Phase 1, 2, 3, 4 ve 5
+# SignalDesk AI — Phase 1, 2, 3, 4, 5 ve 6
 
 SignalDesk AI'ın uzun vadeli amacı, müşteri destek görüşmelerindeki tekrar eden ve çözülmeyen sorunları fark edip olağandışı artışları erken göstermektir. İlk iki aşama yalnızca gerçek veri kümesinin yapısını inceler ve aynı görüşmenin iki kaydını bir araya getirir; model eğitmez.
 
@@ -42,6 +42,9 @@ Gerçek veriyle doğrulanan özet: `test` split'inde 1.746 satır, 873 benzersiz
 - `tests/test_issue_clustering.py`: sentetik müşteri metinleriyle TF-IDF, K-Means, sayım, üst terimler ve K seçimi yardımcılarını internet olmadan sınar.
 - `src/signaldesk/clustering/discover_issues_semantic.py`: hazır `all-MiniLM-L6-v2` modelini yükleyip yalnızca `customer_text` için embedding üretir; aynı K adaylarını dener, gerçek metin örneklerini ve sonradan hesaplanan domain dağılımını gösterir. `load_embedding_model()` ağ/model yüklemeyi sayısal yardımcılardan ayırır. `encode_full_conversations()` uzun metinleri model sınırına sığan parçalara ayırır; `aggregate_chunk_embeddings()` parça vektörlerini tek görüşme vektörüne dönüştürür. `descriptive_top_terms()` kümeleme bittikten sonra ayrı TF-IDF temsiliyle insanın inceleyebileceği terimleri bulur; bu temsil K-Means'e verilmez.
 - `tests/test_semantic_clustering.py`: sentetik vektörlerle cosine similarity, K-Means, küme büyüklüğü, merkez yakınlığı ve betimleyici terimleri sınar; modeli indirmez.
+- `src/signaldesk/monitoring/__init__.py`: zaman temelli erken uyarı denemelerinin Python paketini tanımlar.
+- `src/signaldesk/monitoring/detect_emerging_issues.py`: Phase 5'in gerçek görüşme, embedding ve K=16 kümeleme işlevlerini yeniden kullanır. `synthetic_events()` yalnızca demo zamanı ekler; `inject_synthetic_surge()` mevcut olayları son saatlere taşır. `aggregate_hourly()` boş saatleri sıfırla doldurur. `score_bucket()` mevcut saati dışarıda tutarak geçmiş ortalama ve standart sapmayı hesaplar. `detect_alerts()` geçmiş, asgari olay sayısı ve z-score koşullarını birlikte uygular.
+- `tests/test_emerging_issue_detection.py`: saatlik sayım, geçmiş sızıntısı, sıfır standart sapma, eşikler, normal seri, sıçrama ve deterministik sentetik zamanları internetsiz sınar.
 - `requirements.txt`: bu aşamada gereken `datasets`, `pandas`, `pytest` paketlerini listeler. Pandas henüz veri işlemese de sonraki veri keşfi çalışmaları için erişimi test edilir.
 - `.gitignore`: sanal ortam, Python önbelleği ve yerel `.env` dosyalarını Git dışında tutar.
 
@@ -64,6 +67,7 @@ python -m signaldesk.ml.predict_domain
 python -m signaldesk.ml.predict_domain --text "I need help with my bank transfer."
 python -m signaldesk.clustering.discover_issues
 python -m signaldesk.clustering.discover_issues_semantic
+python -m signaldesk.monitoring.detect_emerging_issues
 python -m pytest -q
 ```
 
@@ -157,3 +161,44 @@ Model dosyaları varsayılan Hugging Face önbelleğinde tutulur; repoya eklenme
 Phase 5'te örneğin cluster 6 internet hızı/modem metinlerini (**38 telecom / 48**), cluster 7 laptop onarımını (**37 technology / 39**), cluster 11 kaza/sigorta talebini (**40 insurance / 41**) topluyor. Cluster 4 ise **31 banking ve 15 hospitality** dahil 11 domaini birleştiriyor; para transferi, hesap ve rezervasyon iptali/geri ödeme ifadeleri aynı gruba düşebiliyor. Cluster 8 **33 banking ve 27 finance** görüşmesini birleştiriyor. Bu ortak konu sözcükleri veya semantik yakınlık, aynı somut müşteri problemi anlamına gelmez. Phase 5'in silhouette değeri daha yüksek, ancak skorlar **farklı temsil uzaylarında** hesaplandı; gerçek issue etiketleri veya insan doğrulaması olmadan “embedding kesin daha iyi problem kümeleri buldu” sonucu çıkaramayız.
 
 Betik seçilen her kümenin sayısını, betimleyici üst terimlerini, domain dağılımını ve merkeze cosine olarak en yakın üç gerçek müşteri metninin kısaltılmış önizlemesini terminalde gösterir. Son çevrimdışı test sonucu: **20 passed**.
+
+## Phase 6: sentetik zamanda erken uyarı denemesi
+
+**Önemli: AppTek verisinde gerçek görüşme zaman damgası yoktur.** Bu bölüm gerçek geçmişte bir olay yaşandığını veya SignalDesk'in canlı izleme yaptığını iddia etmez. Gerçek `customer_text` kayıtları ve Phase 5'in semantic cluster atamaları korunur. Yalnızca **temporal evaluation katmanı sentetiktir**: saatler ve kontrollü artış bellekte üretilir; yeni müşteri metni veya yeni görüşme oluşturulmaz.
+
+```text
+Gerçek müşteri görüşmeleri
+        ↓
+Hazır modelden semantic embeddingler
+        ↓
+Semantic kümeler (K=16; doğrulanmış problem etiketi değil)
+        ↓
+SENTETİK demo zaman damgaları
+        ↓
+Saatlik küme sayıları
+        ↓
+Yalnızca önceki saatlerden baseline
+        ↓
+Anomaly score
+        ↓
+Açıklanabilir erken uyarı denemesi
+```
+
+**Event stream (olay akışı)** burada her gerçek görüşmenin küme ID'si ve *sentetik* zamanından oluşur. **Time series (zaman serisi)** bu olayların saat sırasındaki sayılarıdır. **Time bucket (zaman dilimi)** bir saatlik aralıktır; hiç görüşme olmayan saat de 0 sayılır. **Baseline**, bir kümenin yakın geçmişteki olağan sayısıdır. **Rolling mean (kayan ortalama)** önceki 12 saatlik sayıların ortalaması; **rolling standard deviation (kayan standart sapma)** bu geçmiş sayıların ne kadar değişken olduğudur. **Z-score**, mevcut saatin geçmiş ortalamadan kaç standart sapma uzaklaştığını yaklaşık gösterir. Standart sapma 0 veya çok küçükse bölme işlemi için 1,0 alt sınırı kullanılır. Bu koruma düşük hacimli kümelerde skoru etkiler ve gerçek istatistiksel belirsizliği çözmez.
+
+**Anomaly detection (anomali tespiti)** beklenmedik sayı artışını işaretler. **Emerging issue**, gerçekten yeni veya hızla yaygınlaşan belirli bir müşteri problemi olabilir; her anomali emerging issue değildir. Örneğin mevsimsel kampanya veya rastlantısal yoğunluk da artış yaratabilir. **False positive (yanlış alarm)**, incelendiğinde gerçek ve eyleme değer bir problem artışı çıkmayan uyarıdır. Bu basit kurala göre uyarı için **en az 12 geçmiş saat**, **mevcut saatte en az 8 görüşme** ve **z-score en az 3,0** birlikte gerekir. Asgari sayı, 0–1 civarındaki küçük oynamaların alarm üretmesini azaltır. Artış oranı `current / historical_mean` yalnızca yardımcı açıklamadır; ortalama 0 ise `N/A` gösterilir ve bu oran tek başına alarm kararı vermez.
+
+**Data leakage (veri sızıntısı)** burada mevcut saatin sayısını kendi normal ortalamasına katmakla oluşurdu. Kod geçmiş dizisini `series[index - 12:index]` mantığıyla alır: sağ uçtaki mevcut saat hariçtir. Önceki bir uyarı saati daha sonraki saatin geçmişine girebilir; 14:00 değerlendirmesinde 13:00 artık gerçekten geçmiş olduğu için bu doğrudur. Baseline'ın sıçrama sonrası yükselmesi ikinci uyarının skorunu düşürebilir.
+
+**Synthetic timestamp**, gerçek zaman alanı olmadığı için algılayıcı mantığını deneyebilmemizi sağlar. Sabit seed 42 ile her görüşmeye 1–2 Ocak 2026 UTC içindeki 48 saatten bir demo zamanı verilir. **Synthetic surge injection**, yeterli kaydı olan en büyük kümeyi seçip 30 *mevcut* görüşmenin demo zamanını son iki saate taşır; metin, embedding ve cluster ataması aynı kalır. Bu yapay artış kolayca yakalanması amaçlanan kontrollü bir deneydir; normal trafikteki gerçek false positive oranını ölçmez. Bir küme de doğrulanmış problem türü olmadığı için uyarı henüz gerçek bir “çözülmeyen sorun” anlamına gelmez.
+
+### Gerçek kod koşusundaki sentetik demo sonucu
+
+- Görüşme: **873**; semantic küme: **16**. Sentetik aralık: **2026-01-01 00:00–2026-01-02 23:00 UTC**, saatlik bucket.
+- Baseline: önceki **12 saat**; minimum geçmiş **12 saat**; standart sapma alt sınırı **1,0**. Uyarı: **z ≥ 3,0** ve **en az 8 olay**.
+- En büyük uygun küme **cluster 5** seçildi (**75** gerçek görüşme). **30** mevcut olay son iki saate taşındı. Betimleyici terimler: `size, store, jacket, return, perfect, exchange, order, fit`.
+- Enjeksiyon öncesi kontrol akışında **0** uyarı vardı. Enjeksiyon sonrası **2** uyarı: ikisi cluster 5'te, diğer kümelerde **0**. **Injected surge detected: YES**.
+- **2026-01-02 22:00 UTC:** 16 olay; geçmiş ortalama **0,667**, standart sapma **0,943**, z-score **15,333**, artış oranı **24,00×**.
+- **2026-01-02 23:00 UTC:** 16 olay; geçmiş ortalama **1,917**, standart sapma **4,349**, z-score **3,239**, artış oranı **8,35×**.
+
+Cluster 5'in gerçek örnekleri sezonluk ürün stok sorgusu, kıyafet bedeni ve iade gibi farklı perakende konularını içerebilir. Bu yüzden `size/jacket/return` terimleri kümeyi kesin bir “iade problemi” etiketi yapmaz. Ayrıca sentetik zamanlar gerçek trafik ritmini, toplam çağrı hacmindeki değişimi, hafta/gün mevsimselliğini veya olay çözüm durumunu temsil etmez. 12 saatlik basit baseline ve kontrollü enjeksiyonla elde edilen iki uyarı **production monitoring başarısı** değildir. Gerçek zaman damgalı görüşmeler ve insan doğrulamalı problem grupları olmadan erken uyarı kalitesi ölçülemez.
