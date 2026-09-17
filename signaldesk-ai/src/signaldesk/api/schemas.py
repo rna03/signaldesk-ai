@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class AnalyzeRequest(BaseModel):
@@ -16,12 +16,28 @@ class AnalyzeRequest(BaseModel):
         return value  # Keep the original transcript unchanged.
 
 
+class AnalysisMetadata(BaseModel):
+    domain_model: str
+    domain_input_mode: str
+    embedding_model: str
+    semantic_cluster_count: int
+
+
 class AnalyzeResponse(BaseModel):
     domain: str
     domain_confidence: float
     semantic_cluster: int
     cluster_similarity: float
     cluster_descriptive_terms: list[str]
+    analysis_metadata: AnalysisMetadata
+
+
+class BatchAnalyzeRequest(BaseModel):
+    items: list[AnalyzeRequest] = Field(min_length=1, max_length=50)
+
+
+class BatchAnalyzeResponse(BaseModel):
+    results: list[AnalyzeResponse]
 
 
 class InfoResponse(BaseModel):

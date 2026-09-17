@@ -1,4 +1,4 @@
-"""Görüşme metninden domain tahmini için ilk klasik ML baseline'ını eğitir."""
+"""Müşterinin özgün metninden domain tahmini için klasik ML baseline'ını eğitir."""
 
 from collections import Counter
 from pathlib import Path
@@ -18,7 +18,7 @@ from sklearn.pipeline import Pipeline
 
 from signaldesk.data.build_conversations import build_conversations
 from signaldesk.data.inspect_dataset import DATASET_NAME
-from signaldesk.ml.predict_domain import predict_text
+from signaldesk.ml.predict_domain import INPUT_MODE, predict_text
 
 
 ARTIFACT_PATH = Path(__file__).resolve().parents[3] / "artifacts" / "domain_classifier.joblib"
@@ -26,15 +26,14 @@ RANDOM_STATE = 42
 
 
 def prepare_examples(conversations):
-    """Yalnızca iki özgün transcripti feature, domain'i label olarak hazırla."""
+    """Yalnızca özgün customer_text'i feature, domain'i label olarak hazırla."""
     texts, labels, ids = [], [], []
     for conversation in conversations:
         customer = conversation["customer_text"]
-        agent = conversation["agent_text"]
         label = conversation["domain"]
-        if not customer or not agent or not label:
-            raise ValueError(f"Eksik metin veya domain: {conversation['conversation_id']}")
-        texts.append(customer + " " + agent)
+        if not isinstance(customer, str) or not customer.strip() or not label:
+            raise ValueError(f"Eksik customer_text veya domain: {conversation['conversation_id']}")
+        texts.append(customer)
         labels.append(label)
         ids.append(conversation["conversation_id"])
     if len(ids) != len(set(ids)):
@@ -120,8 +119,8 @@ def main():
         print_prediction(y_test[index], predict_text(model, x_test[index]), x_test[index])
 
     ARTIFACT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    dump(model, ARTIFACT_PATH)
-    print(f"\nModel artifact: {ARTIFACT_PATH}")
+    dump({"pipeline": model, "input_mode": INPUT_MODE}, ARTIFACT_PATH)
+    print(f"\nModel artifact: {ARTIFACT_PATH} (input_mode={INPUT_MODE})")
 
 
 def print_prediction(actual, result, text):

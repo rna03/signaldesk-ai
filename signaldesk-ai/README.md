@@ -1,4 +1,4 @@
-# SignalDesk AI — Phase 1–8
+# SignalDesk AI — Phase 1–9
 
 SignalDesk AI'ın uzun vadeli amacı, müşteri destek görüşmelerindeki tekrar eden ve çözülmeyen sorunları fark edip olağandışı artışları erken göstermektir. İlk iki aşama yalnızca gerçek veri kümesinin yapısını inceler ve aynı görüşmenin iki kaydını bir araya getirir; model eğitmez.
 
@@ -34,7 +34,7 @@ Gerçek veriyle doğrulanan özet: `test` split'inde 1.746 satır, 873 benzersiz
 - `tests/test_environment.py`: paketimizi ve üç temel bağımlılığı import eder; ağ bağlantısı veya dataset indirmesi istemez.
 - `tests/test_pairing.py`: küçük sentetik kayıtlarda çağrı kimliğini, ters kanal/rol düzenini ve eksik/bozuk eşleşmelerin reddini internet olmadan sınar.
 - `src/signaldesk/ml/__init__.py`: klasik makine öğrenmesi kodunun Python paketi olduğunu belirtir.
-- `src/signaldesk/ml/train_domain_classifier.py`: doğrulanmış görüşmeleri yeniden `build_conversations()` ile oluşturur. `prepare_examples()` yalnızca iki transcripti birleştirip `domain` etiketini alır; kimlik ve konuşmacı metadata'sını model girdisine koymaz. `split_examples()` görüşmeleri sabit tohum ve `stratify` ile 80/20 ayırır. `make_pipeline()` TF-IDF ile Logistic Regression'ı birleştirir. `model.fit(x_train, y_train)` yalnızca train verisini görür. Test tahminleri, metrikler ve karışıklık matrisi yazdırılır; model yerel artifact olarak kaydedilir.
+- `src/signaldesk/ml/train_domain_classifier.py`: doğrulanmış görüşmeleri yeniden `build_conversations()` ile oluşturur. Phase 3'te iki transcripti birleştiren ilk deneyi yaptı; Phase 9'da müşteri metni girdisiyle aynı TF-IDF + Logistic Regression yöntemini değerlendirir. `split_examples()` görüşmeleri sabit tohum ve `stratify` ile 80/20 ayırır. `model.fit(x_train, y_train)` yalnızca train verisini görür. Test tahminleri, metrikler ve karışıklık matrisi yazdırılır; model ve girdi sözleşmesi yerel artifact olarak saklanır.
 - `src/signaldesk/ml/predict_domain.py`: kaydedilmiş modeli yükleyip verilen metnin domain tahminini ve en yüksek sınıf skorunu gösterir. Yalnızca kendi eğittiğiniz, güvenilir yerel joblib dosyasını açın.
 - `tests/test_domain_classifier.py`: metin/etiket hazırlamayı, görüşme ayrımını ve tahmin çıktısını sentetik verilerle sınar; gerçek veri indirmez.
 - `src/signaldesk/clustering/__init__.py`: etiketsiz keşif kodunun Python paketi olduğunu belirtir.
@@ -46,10 +46,10 @@ Gerçek veriyle doğrulanan özet: `test` split'inde 1.746 satır, 873 benzersiz
 - `src/signaldesk/monitoring/detect_emerging_issues.py`: Phase 5'in gerçek görüşme, embedding ve K=16 kümeleme işlevlerini yeniden kullanır. `synthetic_events()` yalnızca demo zamanı ekler; `inject_synthetic_surge()` mevcut olayları son saatlere taşır. `aggregate_hourly()` boş saatleri sıfırla doldurur. `score_bucket()` mevcut saati dışarıda tutarak geçmiş ortalama ve standart sapmayı hesaplar. `detect_alerts()` geçmiş, asgari olay sayısı ve z-score koşullarını birlikte uygular.
 - `tests/test_emerging_issue_detection.py`: saatlik sayım, geçmiş sızıntısı, sıfır standart sapma, eşikler, normal seri, sıçrama ve deterministik sentetik zamanları internetsiz sınar.
 - `src/signaldesk/api/__init__.py`: API alt paketini tanımlar.
-- `src/signaldesk/api/schemas.py`: Pydantic istek ve yanıt şekillerini tanımlar. `nonempty_text()` boşluklardan ibaret girdiyi reddeder, geçerli metnin asıl değerini değiştirmez.
-- `src/signaldesk/api/services.py`: Phase 3 modelini, Phase 5 hazır embedding modelini ve kaydedilmiş fitted K-Means'i gerektiğinde bir kez yükler. `analyze()` mevcut yardımcıları çağırır; `demo_alerts` yalnızca Phase 6'nın yapılandırılmış sentetik sonucunu okur.
-- `src/signaldesk/api/main.py`: HTTP route'larını tanımlar. Her route isteği alır, servisi çağırır ve JSON yanıtı döner; ML işlemi route içine yazılmaz. Beklenen eksik artifact 503, beklenmeyen hata güvenli 500 yanıtı olur.
-- `tests/test_api.py`: `TestClient` ve sahte servisle HTTP sözleşmesini, boş metin reddini, 503 ve güvenli 500 yanıtını internet olmadan sınar.
+- `src/signaldesk/api/schemas.py`: Pydantic istek ve yanıt şekillerini tanımlar. Boş müşteri metnini, boş batch'i ve 50 öğeyi aşan batch'i reddeder; geçerli transcripti değiştirmez. `analysis_metadata` alanının şeklini de belirtir.
+- `src/signaldesk/api/services.py`: domain modelini, hazır MiniLM'yi, fitted K-Means'i ve küme metadata'sını gerektiğinde yükleyip önbellekte tutar. Tekli ve çoklu analiz aynı akışı kullanır; `demo_alerts` yalnızca Phase 6'nın yapılandırılmış sentetik sonucunu okur.
+- `src/signaldesk/api/main.py`: `/health`, `/ready` ve `/api/v1/` HTTP route'larını tanımlar. Route servis çağrısını ve güvenli HTTP hata dönüşünü yapar; model mantığı route içine yazılmaz.
+- `tests/test_api.py`: `TestClient` ve sahte servisle HTTP sözleşmesini, girdi reddini, readiness'i ve kontrollü 503/500 yanıtını internet olmadan sınar.
 - `requirements.txt`: veri/ML bağımlılıklarına ek olarak API için yalnızca `fastapi` ve `uvicorn` ekler. Pydantic FastAPI bağımlılığı olarak gelir.
 - `.gitignore`: sanal ortamı, önbelleği, sır içerebilen `.env` dosyalarını ve yeniden üretilebilir yerel model/demo artifact'lerini Git dışında tutar.
 
@@ -217,7 +217,7 @@ Cluster 5'in gerçek örnekleri sezonluk ürün stok sorgusu, kıyafet bedeni ve
 
 **FastAPI**, Python fonksiyonlarını HTTP endpointlerine bağlar ve Pydantic ile veri şekillerini denetler. **Uvicorn**, FastAPI uygulamasını yerel HTTP sunucusu olarak çalıştırır. **Pydantic validation**, gelen `customer_text` alanının bir metin olmasını ve yalnızca boşluk içermemesini denetler; yanlış istek model koduna geçmez. **HTTP 200** isteğin başarıyla işlendiğini, **422** gönderilen verinin şemaya uymadığını, **503** gerekli yerel artifact veya hazır modelin kullanılamadığını gösterir. Beklenmeyen işlem hataları güvenli **500** yanıtı verir; istemciye stack trace, yerel yol veya ortam bilgisi gönderilmez.
 
-**Model serving**, daha önce hazırlanmış modeli yeni girdiler için erişilebilir tutmaktır. Bu **inference API** yeni bir müşteri metninin domainini tahmin eder ve semantic kümesini belirler; burada yeniden eğitim veya K-Means fit işlemi yoktur. Domain modeli eğitimde `customer_text + agent_text` ile öğrenilmişti; API yalnızca `customer_text` alır. Bu girdi farkı özellikle kısa gerçek isteklerde domain tahminini etkileyebilir. **Lazy loading**, modeli ilk ihtiyaç duyulduğunda yüklemektir; `/health` ve `/api/v1/info` modelleri yüklemez. **Caching**, yüklenen Python nesnesini sonraki isteklerde yeniden kullanmaktır. Böylece her istekte diskteki joblib dosyasını veya büyük MiniLM modelini tekrar okumayız. Servis yeniden başlarsa önbellek de yeniden başlar.
+**Model serving**, daha önce hazırlanmış modeli yeni girdiler için erişilebilir tutmaktır. Bu **inference API** yeni bir müşteri metninin domainini tahmin eder ve semantic kümesini belirler; burada yeniden eğitim veya K-Means fit işlemi yoktur. Phase 7'de domain modeli `customer_text + agent_text` ile öğrenilmişken API yalnızca `customer_text` alıyordu. Bu girdi farkının Phase 9'da nasıl ele alındığı aşağıda anlatılıyor. **Lazy loading**, modeli ilk ihtiyaç duyulduğunda yüklemektir; `/health` ve `/api/v1/info` modelleri yüklemez. **Caching**, yüklenen Python nesnesini sonraki isteklerde yeniden kullanmaktır. Böylece her istekte diskteki joblib dosyasını veya büyük MiniLM modelini tekrar okumayız. Servis yeniden başlarsa önbellek de yeniden başlar.
 
 Yeni metin Phase 5 ile **aynı** parçalara ayırma ve vektör birleştirme işlevinden geçer. Kaydedilmiş fitted K-Means `predict()` ile küme seçer; request sırasında 873 görüşmeyi yeniden kümelemez. `cluster_similarity`, yeni metin vektörü ile seçilen merkezin cosine similarity değeridir; **probability değildir**. `cluster_descriptive_terms`, aynı Phase 5 koşusunda ayrı TF-IDF analizinden üretilen açıklayıcı sözcüklerdir; **semantic cluster doğrulanmış issue label değildir**. `domain_confidence` de kalibre edilmiş kesinlik değildir. Phase 6 endpointi `temporal_mode: "synthetic_demo"` ve `is_real_time: false` döndürür; gerçek zamanlı izleme değildir.
 
@@ -245,13 +245,13 @@ cd "C:\Users\Rana\Documents\ChatGPT\call center\signaldesk-ai"
 python -m pip install -r requirements.txt
 $env:PYTHONPATH = (Resolve-Path .\src).Path
 python -m signaldesk.ml.train_domain_classifier
-python -m signaldesk.clustering.discover_issues_semantic
-python -m signaldesk.monitoring.detect_emerging_issues
 python -m pytest -q
 python -m uvicorn signaldesk.api.main:app --reload
 ```
 
-`train_domain_classifier` mevcutsa yeniden çalıştırmak zorunlu değildir. Phase 5 betiği `semantic_clusterer.joblib` ve `semantic_cluster_metadata.json` dosyalarını **aynı koşuda** üretir; bunlardan birini başka koşudaki dosyayla eşleştirmeyin, çünkü küme ID'leri değişebilir. Phase 6 betiği küçük `early_warning_demo.json` dosyasına yalnızca sentetik zamanlı uyarı ölçülerini yazar; müşteri transcripti yazmaz. Bu üç yerel dosya ve domain modeli `artifacts/` altında tutulur ve Git tarafından ignore edilir. `.joblib` dosyalarını yalnızca kendi çalıştırdığınız güvenilir betikten yükleyin. Dosyalar eksikse ilgili endpoint 503 ile üretme komutunu söyler; uygulamanın açılması ve `/health` çalışması için bu dosyalar gerekmez.
+Mevcut Phase 5 K-Means/metadata ve Phase 6 demo artifact'leri yerindeyse onları yeniden üretmeniz gerekmez. Eksiklerse yukarıdaki ilgili Phase 5/6 komutlarıyla oluşturun. `/ready` yerel analiz artifact'lerinin durumunu söyler; sentetik demo dosyası ayrı endpoint için gereklidir.
+
+Phase 9'a yükseltirken eski müşteri+temsilci domain artifact'ini kullanmaya devam etmeyin; `train_domain_classifier` komutunu yeniden çalıştırarak müşteri metni sözleşmesine uygun artifact üretin. Phase 5 betiği `semantic_clusterer.joblib` ve `semantic_cluster_metadata.json` dosyalarını **aynı koşuda** üretir; bunlardan birini başka koşudaki dosyayla eşleştirmeyin, çünkü küme ID'leri değişebilir. Phase 6 betiği küçük `early_warning_demo.json` dosyasına yalnızca sentetik zamanlı uyarı ölçülerini yazar; müşteri transcripti yazmaz. Bu üç yerel dosya ve domain modeli `artifacts/` altında tutulur ve Git tarafından ignore edilir. `.joblib` dosyalarını yalnızca kendi çalıştırdığınız güvenilir betikten yükleyin. Dosyalar eksikse ilgili endpoint 503 ile üretme komutunu söyler; uygulamanın açılması ve `/health` çalışması için bu dosyalar gerekmez.
 
 Sunucu çalışırken ayrı bir PowerShell'de:
 
@@ -396,3 +396,90 @@ Her seçili kümeden ilk betimleyici terimler, en çok görülen domainler ve me
 | Sorunlu örnek | Geniş domain/konu karışımları | Genel “I'm not sure” cümleleri küme 24'te; 8, 9 ve 15 de farklı sorunları karıştırıyor |
 
 Issue ifadeleri bazı dar talepleri görünür kılıyor; örneğin koltuk değişikliği ile ek bagaj farklı kümelerde. Buna karşılık **seçilen silhouette daha düşük** ve K=16'da issue temsili 21–105 ile ham metnin 35–75 aralığından daha dengesiz. Kümelerin bir kısmı hâlâ geniş konuları veya modelin yanlış/genel çıktısını yakalıyor. **Farklı temsillerde silhouette farkı gerçek problem doğruluğu veya “LLM daha iyi” kanıtı değildir.** Doğrulanmış issue etiketleri ve insan değerlendirmesi olmadan hangi kümenin gerçek tekrarlayan problem olduğunu bilemeyiz. 263 fallback'in de kısa ama kısmen ham transcript alıntısı olduğunu unutmayın; sonuç saf FLAN-T5 çıktısı değildir.
+
+## Phase 9: tutarlı analiz servisi
+
+**Training (eğitim)** sırasında TF-IDF, eğitim metinlerinde hangi sözcüklerin bulunduğunu öğrenir; Logistic Regression bu sözcüklerden `domain` tahmini yapacak ağırlıkları öğrenir. **Inference/serving (çıkarım/sunma)** sırasında API yeni müşteri metnini bu hazır modelden geçirir. Tek bir API isteği modeli yeniden eğitmez. Modelin eğitimde gördüğü girdi türü ile API'de aldığı girdi türü farklıysa buna **training-serving skew** veya **training-serving mismatch** denir. Phase 7'de model müşteri ve temsilci metinlerini birlikte görürken API'de yalnız müşteri metni geliyordu. Müşteri tarafındaki sorunu erken anlamak istediğimiz için Phase 9 aynı TF-IDF + Logistic Regression yöntemini yalnız `customer_text` kullanacak şekilde yeniden değerlendirir ve eğitir. Önceki iki taraflı modelin sonuçları tarihsel karşılaştırma olarak korunur; farklı girdilerle elde edilen skorları aynı deneymiş gibi yorumlamayın.
+
+Gerçek AppTek verisindeki **873 görüşme**, `random_state=42` ve domain oranlarını koruyan aynı **698 eğitim / 175 test** bölünmesiyle karşılaştırıldı. Her iki koşuda da TF-IDF ve Logistic Regression ayarları aynıydı; yalnızca metin girdisi değişti.
+
+| Girdi | Accuracy | Macro precision | Macro recall | Macro F1 |
+|---|---:|---:|---:|---:|
+| Phase 3: `customer_text + agent_text` | 0.9257 | 0.9505 | 0.9093 | 0.9237 |
+| Phase 9: yalnız `customer_text` | 0.8400 | 0.8450 | 0.7939 | 0.8031 |
+
+Müşteri metniyle sonuç **daha düşük**; bunu gizlemiyoruz. Testte `finance` sınıfının 6 örneğinden **0**'ı, `telecom` sınıfının 8 örneğinden **4**'ü doğru bulundu. `finance → banking` ve `finance → food` karışıklıklarının her biri 2 kez, `telecom → retail` 2 kez görüldü. Bu küçük sınıf örnekleri genelleme garantisi vermez; domain çıktısı tek başına kesin karar olarak kullanılmamalıdır. Yine de ana API için müşteri metniyle eğitilmiş artifact seçildi, çünkü API temsilci yanıtını almadan müşteri tarafındaki sorunu analiz etmek üzere tasarlandı; giriş sözleşmesinin doğru olması ölçümü ve hatayı görünür kılar.
+
+**Feature contract (girdi sözleşmesi)**, artifact'in hangi alanla eğitildiğini ve API'nin ona hangi alanı vereceğini açıkça belirtir. Buradaki sözleşme `input_mode = "customer_text"` olmalıdır. Eski `customer_text + agent_text` artifact'i yanlışlıkla kullanılırsa API sessizce tahmin üretmek yerine kontrollü bir kullanılabilirlik hatası vermelidir. Böyle bir kontrol, aynı dosya adını taşıyan iki farklı eğitim sürümünü güvenle ayırmaya yardımcı olur. **Model artifact**, eğitimin sonunda diske yazılmış TF-IDF sözlüğü ve sınıflandırıcı gibi hazır model durumudur; API onu yükler ve `predict()` için kullanır. K-Means artifact'i de 16 kümenin öğrenilmiş merkezlerini taşır. Küme numaralarının açıklayıcı terimleri ayrı metadata dosyasında tutulur; metadata ile K-Means aynı koşudan gelmelidir. Üretilen büyük dosyalar Git'e eklenmez.
+
+**Liveness**, sunucu işleminin yanıt verebildiği anlamına gelir: `GET /health` bunun hafif kontrolüdür ve model yüklemez. **Readiness**, analiz için gerekli yerel bileşenlerin hazır olup olmadığını anlatır: `GET /ready` domain modeli, semantic K-Means artifact'i ve ona bağlı metadata gibi zorunlu parçaları kontrol eder. Hazırsa `200` ve `{"status":"ready"}`, eksik veya uyumsuz parça varsa güvenli açıklamayla `503` beklenir. Bu kontrol ağır müşteri metni çıkarımı veya K-Means yeniden eğitimi yapmaz. MiniLM'nin ilk kullanımı önbellekte model yoksa ayrıca indirme gerektirebilir; dolayısıyla hafif readiness kontrolü her olası çalışma zamanı hatasını önceden kanıtlamaz. `/health` başarılıyken `/ready` başarısız olabilir: süreç çalışıyor, fakat henüz analiz veremiyordur.
+
+Tekli `POST /api/v1/analyze` yanıtında `domain`, `domain_confidence`, `semantic_cluster`, `cluster_similarity` ve `cluster_descriptive_terms` korunur. Ek `analysis_metadata`, kullanılan domain modelinin adını, `domain_input_mode` değerini, MiniLM modelini ve küme sayısını belirtir; yerel dosya yolu veya secret içermez. `domain_confidence`, Logistic Regression sınıflandırıcısının `predict_proba` çıktısında seçilen sınıfa verdiği skordur. **Kalibre edilmiş kesinlik** değildir: örneğin `0.8`, her on tahminden sekizinin doğru olacağını tek başına kanıtlamaz. `cluster_similarity`, yeni metnin MiniLM vektörü ile **atanan K-Means kümesinin merkezi** arasındaki cosine similarity değeridir. Vektörlerin yönsel yakınlığını ölçer; olasılık, doğrulanmış issue etiketi veya anomali skoru değildir. Geçersiz ya da sonlu olmayan değer güvenli biçimde reddedilmelidir.
+
+**Batch inference**, birden fazla bağımsız müşteri metnini tek HTTP isteğinde analiz etmektir. `POST /api/v1/analyze/batch`, `items` dizisindeki her metin için tekli endpoint ile aynı sonuç yapısını `results` dizisinde, girdi sırasıyla döndürür. En fazla **50** öğeye izin verilir; boş dizi, sınırı aşan dizi ve yalnız boşluk içeren metin `422` ile reddedilir. Tek tek 50 HTTP isteği göndermek yerine bir batch göndermek ağ ve istek işleme maliyetini azaltabilir; MiniLM de metinleri birlikte encode edebilir. Bu işlem **streaming**, Kafka kuyruğu veya arka planda sürekli izleme değildir. Model ve artifact'leri batch içindeki her öğe için yeniden yüklemek yerine servis önbellekte tutar. Beklenmedik sunucu hataları istemciye stack trace, yerel yol, ortam değişkeni veya secret sızdırmadan güvenli `500` döndürür.
+
+**API versioning**, adreslerdeki `/api/v1/` bölümüdür. İleride istek veya yanıt yapısı uyumsuz biçimde değişirse yeni bir sürüm açarak eski istemcilerin mevcut sözleşmeyi kullanmasına imkân verir. Bu sürüm numarası modelin eğitim sürümüyle aynı şey değildir. `/health` ve `/ready` işletim kontrolleridir; analiz endpointleri `/api/v1/` altında kalır.
+
+### Ana sunum akışı ve ayrı deneyler
+
+```text
+Client
+  ↓
+FastAPI /api/v1
+  ↓
+Pydantic validation
+  ↓
+Analysis Service
+  ├── customer_text → customer-only TF-IDF + Logistic Regression → domain
+  └── customer_text → MiniLM embedding → K-Means K=16
+                                          ↓
+                              atanan merkezle cosine similarity
+  ↓
+Structured JSON response + analysis_metadata
+
+Ayrı sentetik demo: GET /api/v1/alerts/demo → Phase 6 uyarı artifact'i
+Ayrı çevrimdışı deney: customer_text → FLAN-T5 → issue_statement → MiniLM → K-Means
+```
+
+Ana API, Phase 5'teki **ham müşteri metni → MiniLM → K-Means K=16** akışını kullanır. Phase 8 FLAN-T5 çalışması ayrı bir çevrimdışı deney olarak korunur ve `/api/v1/analyze` içine bağlanmaz. Bu kararda yalnız silhouette sayısına bakılmadı: 873 kaydın 263'ünde fallback gerekmesi, bazı üretilmiş ifadelerin genel ya da tekrarlı olması, belirli sorunları daha dar gruplama kazanımı ve API'ye yeni bir üretici model koymanın işlem yükü birlikte değerlendirildi. Daha iyi gerçek issue tespiti iddiası için doğrulanmış etiket ve insan incelemesi gerekir. Erken uyarı demo zamanları da sentetiktir; dataset'te gerçek çağrı zaman damgası yoktur.
+
+### Phase 9'u PowerShell'de çalıştırma
+
+Proje kökünden çalışın. İlk artifact üretimi Hugging Face verisine, MiniLM'nin ilk kullanımı model indirmeye ihtiyaç duyabilir. Domain artifact'ini eski iki taraflı modelden müşteri metni sözleşmesine geçirmek için eğitim komutunu yeniden çalıştırın.
+
+```powershell
+cd "C:\Users\Rana\Documents\ChatGPT\call center\signaldesk-ai"
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+$env:PYTHONPATH = (Resolve-Path .\src).Path
+python -m signaldesk.ml.train_domain_classifier
+python -m signaldesk.clustering.discover_issues_semantic
+python -m signaldesk.monitoring.detect_emerging_issues
+python -m pytest -q
+python -m uvicorn signaldesk.api.main:app --reload
+```
+
+Sunucu açıkken **ayrı** bir PowerShell penceresinde aynı `PYTHONPATH` ayarını yapmanız gerekmez; HTTP isteklerini gönderin:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8000/health
+Invoke-RestMethod http://127.0.0.1:8000/ready
+Invoke-RestMethod http://127.0.0.1:8000/api/v1/info
+
+$single = @{ customer_text = "My internet keeps disconnecting every few minutes and restarting the modem does not fix it." } | ConvertTo-Json
+Invoke-RestMethod http://127.0.0.1:8000/api/v1/analyze -Method Post -ContentType "application/json" -Body $single
+
+$batch = @{
+    items = @(
+        @{ customer_text = "My modem keeps disconnecting from the internet." },
+        @{ customer_text = "I cannot transfer money between my bank accounts." },
+        @{ customer_text = "I need to change the date of my flight." }
+    )
+} | ConvertTo-Json -Depth 4
+Invoke-RestMethod http://127.0.0.1:8000/api/v1/analyze/batch -Method Post -ContentType "application/json" -Body $batch
+
+Invoke-RestMethod http://127.0.0.1:8000/api/v1/alerts/demo
+Start-Process http://127.0.0.1:8000/docs
+```
+
+`/docs` sayfası endpointleri ve istek/yanıt şemalarını etkileşimli gösterir. Batch yanıtının her öğesini kendi girdi sırasıyla karşılaştırın. Buradaki üç örnek sırasıyla telecom, banking ve aviation konusunda yazılmıştır; model tahmininin bu etiketleri kesin vermesi garanti değildir. API'de gerçek zamanlı olay alımı, kalıcı veritabanı, authentication veya canlı uyarı akışı bulunmaz.
