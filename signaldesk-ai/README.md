@@ -1,4 +1,4 @@
-# SignalDesk AI — Phase 1, 2, 3 ve 4
+# SignalDesk AI — Phase 1, 2, 3, 4 ve 5
 
 SignalDesk AI'ın uzun vadeli amacı, müşteri destek görüşmelerindeki tekrar eden ve çözülmeyen sorunları fark edip olağandışı artışları erken göstermektir. İlk iki aşama yalnızca gerçek veri kümesinin yapısını inceler ve aynı görüşmenin iki kaydını bir araya getirir; model eğitmez.
 
@@ -40,6 +40,8 @@ Gerçek veriyle doğrulanan özet: `test` split'inde 1.746 satır, 873 benzersiz
 - `src/signaldesk/clustering/__init__.py`: etiketsiz keşif kodunun Python paketi olduğunu belirtir.
 - `src/signaldesk/clustering/discover_issues.py`: doğrulanmış görüşmeleri yeniden oluşturur, yalnızca `customer_text` ile TF-IDF matrisi üretir ve farklı K-Means adaylarını karşılaştırır. `make_vectorizer()` kaynak metni değiştirmeden sayısal özellik oluşturur. `cluster_counts()` dengeyi, `top_terms()` merkezde ağır basan sözcükleri, `representative_indices()` merkeze yakın gerçek görüşmeleri bulur. `select_candidate()` silhouette yakınlığını ve küme büyüklüğünü birlikte dikkate alır. `domain` yalnızca sonuçlar üretildikten sonra dağılım göstermek için okunur.
 - `tests/test_issue_clustering.py`: sentetik müşteri metinleriyle TF-IDF, K-Means, sayım, üst terimler ve K seçimi yardımcılarını internet olmadan sınar.
+- `src/signaldesk/clustering/discover_issues_semantic.py`: hazır `all-MiniLM-L6-v2` modelini yükleyip yalnızca `customer_text` için embedding üretir; aynı K adaylarını dener, gerçek metin örneklerini ve sonradan hesaplanan domain dağılımını gösterir. `load_embedding_model()` ağ/model yüklemeyi sayısal yardımcılardan ayırır. `encode_full_conversations()` uzun metinleri model sınırına sığan parçalara ayırır; `aggregate_chunk_embeddings()` parça vektörlerini tek görüşme vektörüne dönüştürür. `descriptive_top_terms()` kümeleme bittikten sonra ayrı TF-IDF temsiliyle insanın inceleyebileceği terimleri bulur; bu temsil K-Means'e verilmez.
+- `tests/test_semantic_clustering.py`: sentetik vektörlerle cosine similarity, K-Means, küme büyüklüğü, merkez yakınlığı ve betimleyici terimleri sınar; modeli indirmez.
 - `requirements.txt`: bu aşamada gereken `datasets`, `pandas`, `pytest` paketlerini listeler. Pandas henüz veri işlemese de sonraki veri keşfi çalışmaları için erişimi test edilir.
 - `.gitignore`: sanal ortam, Python önbelleği ve yerel `.env` dosyalarını Git dışında tutar.
 
@@ -61,6 +63,7 @@ python -m signaldesk.ml.train_domain_classifier
 python -m signaldesk.ml.predict_domain
 python -m signaldesk.ml.predict_domain --text "I need help with my bank transfer."
 python -m signaldesk.clustering.discover_issues
+python -m signaldesk.clustering.discover_issues_semantic
 python -m pytest -q
 ```
 
@@ -118,3 +121,39 @@ Vektörleştirici İngilizce yaygın sözcükleri ve ilk denemede kümeleri domi
 Sonuç yine de sınırlı. Cluster 7 (`need, guys, think...`, 106 görüşme) 16 domaini karıştırıyor. Cluster 9 (`package, perfect, good...`, 127 görüşme) seyahat, teslimat ve perakendeyi birlikte tutuyor; `package` farklı anlamlarda kullanılabiliyor. Cluster 14 (`zero, zero zero, flight...`, 45 görüşme) konuşmalarda söylenen sayıların etkisini gösteriyor. Cluster 10 teknoloji ve telekomu (36 ve 30 görüşme) birleştiriyor. Bazı kümeler problemden çok geniş hizmet alanını yakalıyor; örneğin `flight/seat` veya `energy/solar`. **0.0451 düşük bir silhouette değeridir** ve bu karma kümelerle birlikte TF-IDF'nin yalnızca sözcük benzerliğine dayanmasının sınırını gösterir. Küme numaraları veya üst terimleri “gerçek problem etiketi” olarak kullanmayın. Bu aşama zaman içinde artış veya çözülmeyen sorun tespiti de yapmaz.
 
 Betik her kümenin büyüklüğünü, üst terimlerini, sonradan hesaplanan domain dağılımını ve merkeze en yakın üç gerçek `customer_text` önizlemesini terminale basar. Hiçbir CSV/JSON ya da model artifact dosyası oluşturmaz. Phase 4 doğrulamasında **15 pytest testi geçti**.
+
+## Phase 5: hazır modelden anlamsal embedding ile keşif
+
+Phase 4'te TF-IDF, her kelime veya kelime çiftine ayrı bir özellik ayırdı; çoğu görüşmede bu özelliklerin büyük kısmı sıfırdır. Buna **sparse vector (seyrek vektör)** denir. **Semantic embedding (anlamsal gömme)** ise hazır bir modelin metni daha kısa bir **dense vector (yoğun vektör)** içine dönüştürmesidir. Bu boyutlar tek tek kelimelerin sayaçları değildir; modelin eğitim sırasında öğrendiği birleşik dil örüntülerini temsil eder. Örneğin “My internet keeps disconnecting.” ile “My connection drops every few minutes.” az sözcük paylaşsa da benzer bir durumu anlatabilir. TF-IDF bu kelime farkında zorlanabilir; embedding bu iki anlamı yakın vektörlere koymayı amaçlar. Üçüncü örnek “I need to change my flight seat.” farklı bir konudur. Betik bu üç cümlenin gerçek model çıktıları arasında cosine similarity hesaplar; beklenen sonucu koda yazmaz.
+
+**Pretrained model**, daha önce başka verilerle eğitilmiş ve hazır ağırlıklarla yayımlanmış modeldir. Burada [sentence-transformers/all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) kullanılır. **Bu aşamada modeli eğitmiyoruz ve fine-tune etmiyoruz.** Model yalnızca `customer_text` için vektör üretir; bu kullanım **inference (çıkarım)**dır. `normalize_embeddings=True`, her vektörün uzunluğunu 1'e ölçekler. **Cosine similarity**, iki vektörün yönce yakınlığını ölçer; benzer anlamlı ifadelerin embedding uzayında daha yakın olması hedeflenir. Yüksek cosine similarity **aynı gerçek müşteri problemi** olduklarını garanti etmez.
+
+K-Means'e verilen girdiler yalnızca müşteri metninin embeddingleridir. `agent_text`, `domain`, `speaker_id`, `conversation_id`, `gender`, `accent` ve `file_name` verilmez. Domain dağılımı ancak kümeleme bittikten sonra yorumlama için hesaplanır; domain gerçek issue etiketi değildir. Embedding boyutları kelime olmadığı için model merkezinden doğrudan “top terms” okumuyoruz. Bunun yerine her kümeye atanmış özgün müşteri metinleri üzerinde **ayrı bir TF-IDF analiz katmanı** kurup betimleyici terimleri gösteriyoruz. Bu TF-IDF matrisi kümeleri oluşturmaz ve cluster ID'lerini değiştirmez.
+
+Bu genel amaçlı model SignalDesk çağrılarına özel eğitilmedi. [Model kartına göre](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2), uzun girdiler varsayılan olarak 256 word piece sonrasında kesilir. Gerçek veride görüşmelerin çoğu bu sınırı aştığından betik metni token sınırına sığan parçalara ayırır, her parçayı hazır modelle encode eder, parça uzunluğuna göre vektörleri ortalar ve görüşme vektörünü tekrar normalize eder. Böylece metnin sonu sessizce kaybolmaz; fakat basit ortalama uzun bir görüşmenin cümleler arası bağlamını bütünüyle koruyamaz. Kaynak transcript hiç değiştirilmez. Bu temsil, Phase 4'ün tam metin TF-IDF sonucuyla aynı tür özellikler üretmediğinden silhouette değerleri doğrudan kalite garantisi değildir. Domain dağılımı doğrulanmış problem etiketi değildir ve kümeler doğrulanmış müşteri problem kategorileri sayılmamalıdır.
+
+Model dosyaları varsayılan Hugging Face önbelleğinde tutulur; repoya eklenmez. Eğer önbellek proje altında oluşturulursa `.gitignore` içindeki `.cache/` kuralı onu dışlar. Betik müşteri verisini veya embeddingleri kalıcı CSV/JSON dosyasına yazmaz.
+
+### Gerçek çalışma ve Phase 4 karşılaştırması
+
+873 `customer_text` için model 384 boyutlu görüşme vektörleri üretti: matris **(873, 384)**. Model sınırını aşan **849** döküm, toplam **3.053** parçaya ayrıldı; bir görüşmede en fazla 10 parça vardı. Her parçanın yeniden tokenleştirilmiş uzunluğu sınır altında kontrol edildi. Sanity check'te internet bağlantısını anlatan A–B cosine similarity **0.6723**, internet ile uçak koltuğunu anlatan A–C **0.1817** çıktı; A–B daha yüksek. Bu küçük kontrol bir accuracy testi değildir.
+
+| K | Phase 5 cosine silhouette | En küçük küme | En büyük küme |
+|---:|---:|---:|---:|
+| 8 | 0.1745 | 40 | 200 |
+| 12 | 0.1944 | 39 | 169 |
+| 16 | 0.2070 | 35 | 75 |
+| 20 | 0.2107 | 8 | 69 |
+| 24 | 0.1927 | 14 | 62 |
+| 30 | 0.1773 | 7 | 69 |
+
+**K=16** seçildi: K=20'nin silhouette değeri yalnızca 0.0037 daha yüksek, fakat en küçük kümesi 8 görüşme. K=16'da bütün kümeler 35–75 aralığında; 16 kümenin terim ve örneklerini elle incelemek 20 kümeye göre daha kolay. Kod, en az 5 üyeli ve en büyük kümesi toplamın en çok %20'si olan adaylardan en iyi silhouette değerine 0.005 yakın en küçük K'yi seçer. Bu bir keşif tercihidir, gerçek problem sayısının kanıtı değildir.
+
+| Çalışma | Temsil | Seçilen K | Cosine silhouette | Küme aralığı | Gözlemsel yorum |
+|---|---|---:|---:|---:|---|
+| Phase 4 | Tam metin TF-IDF | 16 | 0.0451 | 19–127 | Bazı belirgin terimler var; 7, 9 ve 14 numaralı kümeler farklı konuları veya sayı/dolgu sözcüklerini karıştırıyor. |
+| Phase 5 | Tüm metnin parça ortalamalı MiniLM embeddingi | 16 | 0.2070 | 35–75 | Daha dengeli ve birçok kümeyle ilgili metin örneği var; yine de karışık kümeler sürüyor. |
+
+Phase 5'te örneğin cluster 6 internet hızı/modem metinlerini (**38 telecom / 48**), cluster 7 laptop onarımını (**37 technology / 39**), cluster 11 kaza/sigorta talebini (**40 insurance / 41**) topluyor. Cluster 4 ise **31 banking ve 15 hospitality** dahil 11 domaini birleştiriyor; para transferi, hesap ve rezervasyon iptali/geri ödeme ifadeleri aynı gruba düşebiliyor. Cluster 8 **33 banking ve 27 finance** görüşmesini birleştiriyor. Bu ortak konu sözcükleri veya semantik yakınlık, aynı somut müşteri problemi anlamına gelmez. Phase 5'in silhouette değeri daha yüksek, ancak skorlar **farklı temsil uzaylarında** hesaplandı; gerçek issue etiketleri veya insan doğrulaması olmadan “embedding kesin daha iyi problem kümeleri buldu” sonucu çıkaramayız.
+
+Betik seçilen her kümenin sayısını, betimleyici üst terimlerini, domain dağılımını ve merkeze cosine olarak en yakın üç gerçek müşteri metninin kısaltılmış önizlemesini terminalde gösterir. Son çevrimdışı test sonucu: **20 passed**.
