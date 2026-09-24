@@ -1,124 +1,124 @@
 <!doctype html>
-<html lang="en">
+<html lang="tr">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#10243a">
-  <title>SignalDesk AI — Customer Issue Intelligence</title>
+  <title>SignalDesk AI — Çağrı Merkezi Akıllı Analiz Sistemi</title>
   <link rel="stylesheet" href="/static/css/styles.css?v=10">
-  <script type="module" src="/static/js/app.js?v=10"></script>
+  <script type="module" src="/static/js/app.js?v=12"></script>
 </head>
 <body>
   <div class="app-shell">
-    <aside class="sidebar" aria-label="Dashboard navigation">
-      <a class="brand" href="#top" aria-label="SignalDesk AI home">
+    <aside class="sidebar" aria-label="Ana menü">
+      <a class="brand" href="#top" aria-label="SignalDesk AI ana sayfa">
         <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
-        <span><strong>SignalDesk</strong><small>AI / OPERATIONS</small></span>
+        <span><strong>SignalDesk AI</strong><small>ÇAĞRI MERKEZİ ANALİZİ</small></span>
       </a>
-      <div class="sidebar-label">WORKSPACE</div>
-      <nav class="side-nav" aria-label="Sections">
-        <a href="#overview"><span class="nav-number">01</span> Overview</a>
-        <a href="#single-analysis"><span class="nav-number">02</span> Single analysis</a>
-        <a href="#batch-analysis"><span class="nav-number">03</span> Batch analysis</a>
-        <a href="#early-warning"><span class="nav-number">04</span> Early warning demo</a>
-        <a href="#model-info"><span class="nav-number">05</span> Model information</a>
+      <div class="sidebar-label">ÇALIŞMA ALANI</div>
+      <nav class="side-nav" aria-label="Bölümler">
+        <a href="#overview"><span class="nav-number">01</span> Genel Bakış</a>
+        <a href="#single-analysis"><span class="nav-number">02</span> Görüşme Analizi</a>
+        <a href="#batch-analysis"><span class="nav-number">03</span> Toplu Analiz</a>
+        <a href="#early-warning"><span class="nav-number">04</span> Erken Uyarılar</a>
+        <a href="#model-info"><span class="nav-number">05</span> Model Bilgileri</a>
       </nav>
       <div class="sidebar-bottom">
         <span class="sidebar-dot" aria-hidden="true"></span>
-        <div><strong>Research dashboard</strong><small>Public dataset · Local API</small></div>
+        <div><strong>Araştırma Arayüzü</strong><small>Açık veri kümesi · Yerel API</small></div>
       </div>
     </aside>
 
     <main id="top" class="main-content">
       <header class="page-header">
         <div>
-          <p class="eyebrow">CUSTOMER SUPPORT INTELLIGENCE</p>
-          <h1>SignalDesk AI</h1>
-          <p class="page-subtitle">Customer Issue Intelligence &amp; Early Warning</p>
+          <p class="eyebrow">SIGNALDESK AI</p>
+          <h1>Çağrı Merkezi Akıllı Analiz Sistemi</h1>
+          <p class="page-subtitle">Müşteri görüşmelerini analiz edin, tekrar eden sorunları keşfedin ve olağandışı şikâyet artışlarını erkenden tespit edin.</p>
         </div>
-        <a class="docs-link" href="/docs" target="_blank" rel="noopener noreferrer">API documentation <span aria-hidden="true">↗</span></a>
+        <a class="docs-link" href="/docs" target="_blank" rel="noopener noreferrer">API Dokümantasyonu <span aria-hidden="true">↗</span></a>
       </header>
 
       <section id="overview" class="section-block" aria-labelledby="overview-title">
         <div class="section-heading">
-          <div><p class="section-kicker">01 / SYSTEM STATUS</p><h2 id="overview-title">Service overview</h2></div>
-          <button id="refresh-status" type="button" class="button button-quiet">Refresh status</button>
+          <div><p class="section-kicker">01 / SİSTEM DURUMU</p><h2 id="overview-title">Sistem Durumu</h2></div>
+          <button id="refresh-status" type="button" class="button button-quiet">Durumu Yenile</button>
         </div>
         <div class="status-grid">
           <article class="status-card" id="api-status-card" data-state="checking">
-            <div class="status-top"><span class="status-icon" aria-hidden="true"></span><span class="status-label">API STATUS</span></div>
-            <strong id="api-status-text" aria-live="polite">Checking…</strong>
-            <p id="api-status-detail">Checking the health endpoint.</p>
+            <div class="status-top"><span class="status-icon" aria-hidden="true"></span><span class="status-label">API DURUMU</span></div>
+            <strong id="api-status-text" aria-live="polite">Kontrol ediliyor…</strong>
+            <p id="api-status-detail">API bağlantısı kontrol ediliyor.</p>
           </article>
           <article class="status-card" id="ready-status-card" data-state="checking">
-            <div class="status-top"><span class="status-icon" aria-hidden="true"></span><span class="status-label">ANALYSIS READINESS</span></div>
-            <strong id="ready-status-text" aria-live="polite">Checking…</strong>
-            <p id="ready-status-detail">Checking local model artifacts.</p>
+            <div class="status-top"><span class="status-icon" aria-hidden="true"></span><span class="status-label">MODEL DURUMU</span></div>
+            <strong id="ready-status-text" aria-live="polite">Kontrol ediliyor…</strong>
+            <p id="ready-status-detail">Yerel model dosyaları kontrol ediliyor.</p>
           </article>
           <article class="status-card status-card-context">
-            <div class="status-top"><span class="context-icon" aria-hidden="true">SD</span><span class="status-label">DEMO MODE</span></div>
-            <strong>Research environment</strong>
-            <p>Early warning timestamps are synthetic. Analysis uses the local serving models.</p>
+            <div class="status-top"><span class="context-icon" aria-hidden="true">SD</span><span class="status-label">DEMO MODU</span></div>
+            <strong>Araştırma ortamı</strong>
+            <p>Erken uyarı zamanları sentetiktir. Analiz, yerel model dosyalarını kullanır.</p>
           </article>
         </div>
       </section>
 
       <section id="single-analysis" class="section-block" aria-labelledby="single-title">
         <div class="section-heading">
-          <div><p class="section-kicker">02 / EXPLORE A CONVERSATION</p><h2 id="single-title">Single Conversation Analysis</h2></div>
-          <span class="section-aside">Customer message only</span>
+          <div><p class="section-kicker">02 / GÖRÜŞME ANALİZİ</p><h2 id="single-title">Görüşme Analizi</h2></div>
+          <span class="section-aside">Yalnızca müşteri mesajı</span>
         </div>
         <div class="analysis-layout">
           <form id="single-form" class="panel input-panel" novalidate>
-            <label for="customer-message" class="field-label">Customer message</label>
-            <p class="field-hint">Paste a customer transcript or try the sample message.</p>
-            <textarea id="customer-message" name="customer-message" rows="7" required>My internet keeps disconnecting every few minutes and restarting the modem does not fix it.</textarea>
-            <div class="form-footer"><span class="form-note">Original text is sent without preprocessing.</span><button id="single-submit" class="button button-primary" type="submit">Analyze Conversation <span aria-hidden="true">→</span></button></div>
+            <label for="customer-message" class="field-label">Müşteri Mesajı</label>
+            <p class="field-hint">Bir müşteri görüşmesini girerek sorun kategorisini ve model tahminini inceleyin. Model İngilizce görüşme metinleriyle eğitilmiştir.</p>
+            <textarea id="customer-message" name="customer-message" rows="7" placeholder="Analiz etmek istediğiniz müşteri görüşmesini buraya girin..." required>My internet keeps disconnecting every few minutes and restarting the modem does not fix it.</textarea>
+            <div class="form-footer"><span class="form-note">Metin, ön işleme uygulanmadan özgün biçimiyle gönderilir.</span><button id="single-submit" class="button button-primary" type="submit">Görüşmeyi Analiz Et <span aria-hidden="true">→</span></button></div>
             <p id="single-feedback" class="feedback" role="status" aria-live="polite"></p>
           </form>
-          <div id="single-placeholder" class="panel empty-state"><span class="empty-mark" aria-hidden="true">⌁</span><h3>Ready to explore</h3><p>Run an analysis to see the predicted domain and semantic cluster.</p></div>
+          <div id="single-placeholder" class="panel empty-state"><span class="empty-mark" aria-hidden="true">⌁</span><h3>Analize hazır</h3><p>Tespit edilen kategoriyi ve sorun kümesini görmek için görüşmeyi analiz edin.</p></div>
           <article id="single-result" class="panel result-panel" aria-labelledby="single-result-title" hidden>
-            <div class="result-heading"><span class="eyebrow">ANALYSIS RESULT</span><h3 id="single-result-title">Conversation signals</h3></div>
+            <div class="result-heading"><span class="eyebrow">ANALİZ SONUCU</span><h3 id="single-result-title">Görüşme Bulguları</h3></div>
             <div class="result-grid">
-              <div class="metric metric-primary"><span>Predicted Domain</span><strong id="result-domain">—</strong></div>
-              <div class="metric"><span>Domain Model Score</span><strong id="result-domain-score">—</strong><small>Classifier predict_proba output; not calibrated certainty.</small></div>
-              <div class="metric"><span>Semantic Cluster</span><strong id="result-cluster">—</strong></div>
-              <div class="metric"><span>Centroid Similarity</span><strong id="result-similarity">—</strong><small>Cosine similarity to the assigned cluster centroid; not a probability.</small></div>
+              <div class="metric metric-primary"><span>Tespit Edilen Kategori</span><strong id="result-domain">—</strong></div>
+              <div class="metric"><span>Güven Oranı</span><strong id="result-domain-score">—</strong><small>Sınıflandırıcının predict_proba çıktısıdır; kalibre edilmiş kesinlik değildir.</small></div>
+              <div class="metric"><span>Sorun Kümesi</span><strong id="result-cluster">—</strong></div>
+              <div class="metric"><span>Merkez Benzerliği</span><strong id="result-similarity">—</strong><small>Atanan küme merkezine kosinüs benzerliği değeridir; olasılık değildir.</small></div>
             </div>
-            <div class="terms-block"><h4>Cluster Descriptive Terms</h4><div id="result-terms" class="tag-list"></div></div>
-            <div class="metadata-block"><h4>Analysis metadata</h4><dl><div><dt>Domain Model</dt><dd id="meta-domain-model">—</dd></div><div><dt>Domain Input</dt><dd id="meta-domain-input">—</dd></div><div><dt>Embedding Model</dt><dd id="meta-embedding-model">—</dd></div><div><dt>Semantic Cluster Count</dt><dd id="meta-cluster-count">—</dd></div></dl></div>
+            <div class="terms-block"><h4>Küme Açıklama Terimleri</h4><div id="result-terms" class="tag-list"></div></div>
+            <div class="metadata-block"><h4>Analiz Detayları</h4><dl><div><dt>Kategori Modeli</dt><dd id="meta-domain-model">—</dd></div><div><dt>Model Girdisi</dt><dd id="meta-domain-input">—</dd></div><div><dt>Embedding Modeli</dt><dd id="meta-embedding-model">—</dd></div><div><dt>Sorun Kümesi Sayısı</dt><dd id="meta-cluster-count">—</dd></div></dl></div>
           </article>
         </div>
       </section>
 
       <section id="batch-analysis" class="section-block" aria-labelledby="batch-title">
-        <div class="section-heading"><div><p class="section-kicker">03 / COMPARE MESSAGES</p><h2 id="batch-title">Batch Analysis</h2></div><span class="section-aside">Up to 50 messages</span></div>
+        <div class="section-heading"><div><p class="section-kicker">03 / GÖRÜŞMELERİ KARŞILAŞTIR</p><h2 id="batch-title">Toplu Görüşme Analizi</h2></div><span class="section-aside">En fazla 50 mesaj</span></div>
         <div class="panel batch-panel">
           <form id="batch-form" novalidate>
-            <label for="batch-messages" class="field-label">Customer messages · one per line</label>
-            <p class="field-hint">Blank lines are ignored. Results appear in the same order as your messages.</p>
-            <textarea id="batch-messages" name="batch-messages" rows="5" required>My modem keeps losing connection.
+            <label for="batch-messages" class="field-label">Müşteri Mesajları · Her satıra bir mesaj</label>
+            <p class="field-hint">Boş satırlar dikkate alınmaz. Sonuçlar mesajlarla aynı sırada gösterilir. Örnekler, modelin eğitim diline uygun olarak İngilizcedir.</p>
+            <textarea id="batch-messages" name="batch-messages" rows="5" placeholder="Her satıra analiz edilecek bir müşteri mesajı girin..." required>My modem keeps losing connection.
 My bank transfer has not arrived.
 I need to change the date of my flight.</textarea>
-            <div class="form-footer"><span class="form-note" id="batch-count">3 messages</span><button id="batch-submit" class="button button-primary" type="submit">Analyze Batch <span aria-hidden="true">→</span></button></div>
+            <div class="form-footer"><span class="form-note" id="batch-count">3 mesaj</span><button id="batch-submit" class="button button-primary" type="submit">Toplu Analizi Başlat <span aria-hidden="true">→</span></button></div>
             <p id="batch-feedback" class="feedback" role="status" aria-live="polite"></p>
           </form>
-          <div id="batch-result" class="table-wrap" hidden><table><caption>Batch analysis results</caption><thead><tr><th scope="col">#</th><th scope="col">Input preview</th><th scope="col">Domain</th><th scope="col">Domain Score</th><th scope="col">Cluster</th><th scope="col">Similarity</th></tr></thead><tbody id="batch-table-body"></tbody></table></div>
+          <div id="batch-result" class="table-wrap" hidden><table><caption>Toplu analiz sonuçları</caption><thead><tr><th scope="col">#</th><th scope="col">Girdi Önizlemesi</th><th scope="col">Kategori</th><th scope="col">Güven Oranı</th><th scope="col">Küme</th><th scope="col">Benzerlik</th></tr></thead><tbody id="batch-table-body"></tbody></table></div>
         </div>
       </section>
 
       <section id="early-warning" class="section-block" aria-labelledby="alerts-title">
-        <div class="section-heading"><div><p class="section-kicker">04 / TEMPORAL SIGNALS</p><h2 id="alerts-title">Early Warning Demo</h2></div><span class="badge badge-amber">Synthetic Temporal Demo</span></div>
-        <div class="callout"><span class="callout-line" aria-hidden="true"></span><p>The source dataset does not contain real timestamps. Alert timing in this section is generated for controlled demonstration. These are not live alerts.</p></div>
-        <div class="panel table-panel"><p id="alerts-feedback" class="feedback" role="status" aria-live="polite">Loading demo alerts…</p><div id="alerts-table" class="table-wrap" hidden><table><caption>Synthetic early warning alerts</caption><thead><tr><th scope="col">Timestamp</th><th scope="col">Cluster</th><th scope="col">Current Count</th><th scope="col">Historical Mean</th><th scope="col">Anomaly Score</th><th scope="col">Increase Ratio</th><th scope="col">Descriptive Terms</th></tr></thead><tbody id="alerts-table-body"></tbody></table></div></div>
+        <div class="section-heading"><div><p class="section-kicker">04 / ERKEN UYARI</p><h2 id="alerts-title">Erken Uyarılar</h2></div><span class="badge badge-amber">Sentetik Zaman Serisi Demosu</span></div>
+        <div class="callout"><span class="callout-line" aria-hidden="true"></span><p>Kaynak veri kümesinde gerçek zaman damgası bulunmaz. Bu bölümdeki uyarı zamanları kontrollü gösterim amacıyla üretilmiştir; canlı uyarı değildir.</p></div>
+        <div class="panel table-panel"><p id="alerts-feedback" class="feedback" role="status" aria-live="polite">Demo uyarıları yükleniyor…</p><div id="alerts-table" class="table-wrap" hidden><table><caption>Sentetik erken uyarılar</caption><thead><tr><th scope="col">Tarih / Saat</th><th scope="col">Sorun Kümesi</th><th scope="col">Güncel Görüşme</th><th scope="col">Normal Ortalama</th><th scope="col">Anomali Skoru (Z-Score)</th><th scope="col">Artış Oranı</th><th scope="col">Uyarı Özeti</th></tr></thead><tbody id="alerts-table-body"></tbody></table></div></div>
       </section>
 
       <section id="model-info" class="section-block" aria-labelledby="info-title">
-        <div class="section-heading"><div><p class="section-kicker">05 / TRANSPARENCY</p><h2 id="info-title">System / Model Information</h2></div><span class="section-aside">From the API</span></div>
-        <div class="panel info-panel"><p id="info-feedback" class="feedback" role="status" aria-live="polite">Loading model information…</p><dl id="info-list" class="info-grid" hidden><div><dt>API Version</dt><dd id="info-version">—</dd></div><div><dt>Domain Classifier</dt><dd id="info-domain">—</dd></div><div><dt>Embedding Model</dt><dd id="info-embedding">—</dd></div><div><dt>Semantic Cluster Count</dt><dd id="info-clusters">—</dd></div><div><dt>Temporal Mode</dt><dd id="info-temporal">—</dd></div></dl></div>
+        <div class="section-heading"><div><p class="section-kicker">05 / ŞEFFAFLIK</p><h2 id="info-title">Sistem ve Model Bilgileri</h2></div><span class="section-aside">API üzerinden</span></div>
+        <div class="panel info-panel"><p id="info-feedback" class="feedback" role="status" aria-live="polite">Model bilgileri yükleniyor…</p><dl id="info-list" class="info-grid" hidden><div><dt>API Sürümü</dt><dd id="info-version">—</dd></div><div><dt>Kategori Sınıflandırıcısı</dt><dd id="info-domain">—</dd></div><div><dt>Embedding Modeli</dt><dd id="info-embedding">—</dd></div><div><dt>Sorun Kümesi Sayısı</dt><dd id="info-clusters">—</dd></div><div><dt>Zaman Modu</dt><dd id="info-temporal">—</dd></div></dl></div>
       </section>
 
-      <footer class="page-footer"><span>SignalDesk AI · Public research dataset</span><span>Analysis support, not a verified issue label or live monitoring system.</span></footer>
+      <footer class="page-footer"><span>SignalDesk AI · Açık araştırma veri kümesi</span><span>Analiz desteği sağlar; doğrulanmış sorun etiketi veya canlı izleme sistemi değildir.</span></footer>
     </main>
   </div>
 </body>

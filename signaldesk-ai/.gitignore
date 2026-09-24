@@ -1,11 +1,43 @@
+# Python ortamları ve önbellekler
 .venv/
+venv/
+env/
 __pycache__/
-.pytest_cache/
 *.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Yerel ayarlar ve sırlar
 .env
 .env.*
-artifacts/*.joblib
-artifacts/semantic_cluster_metadata.json
-artifacts/early_warning_demo.json
-artifacts/extracted_issues.json
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Editör ve işletim sistemi dosyaları
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.log
+
+# Paketleme çıktıları
+build/
+dist/
+*.egg-info/
+
+# Hugging Face ve model önbellekleri
 .cache/
+.huggingface/
+
+# Yeniden üretilebilen veri ve model çıktıları
+artifacts/
+
+# Yerel arşivler
+*.zip
+*.tar
+*.tar.gz

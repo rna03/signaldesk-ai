@@ -1,8 +1,11 @@
 datasets
+fastapi
+joblib
+numpy
 pandas
+pydantic
 pytest
 scikit-learn
 sentence-transformers
-fastapi
-uvicorn
 transformers
+uvicorn

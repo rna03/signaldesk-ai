@@ -1,0 +1,15 @@
+# Git kökündeki yerel proje arşivi; sanal ortam ve üretilmiş artifactler içerir.
+/signaldesk-ai.zip
+
+# Kök dizinde oluşabilecek yerel ayar ve çalışma dosyaları
+/.env
+/.env.*
+/.venv/
+/__pycache__/
+/.pytest_cache/
+/.cache/
+/.coverage
+/htmlcov/
+/build/
+/dist/
+/*.log

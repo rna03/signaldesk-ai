@@ -2,7 +2,7 @@
 
 from fastapi.testclient import TestClient
 
-from signaldesk.api.main import app
+from signaldesk.api.main import FRONTEND_DIR, app
 from signaldesk.api.services import get_service
 
 
@@ -26,8 +26,15 @@ def test_dashboard_and_static_assets_are_served():
         page = client.get("/")
         assert page.status_code == 200
         assert "text/html" in page.headers["content-type"]
+        assert "charset=utf-8" in page.headers["content-type"]
         assert "SignalDesk AI" in page.text
-        assert "Synthetic Temporal Demo" in page.text
+        assert '<html lang="tr">' in page.text
+        assert "Çağrı Merkezi Akıllı Analiz Sistemi" in page.text
+        assert "Müşteri görüşmelerini analiz edin, tekrar eden sorunları keşfedin" in page.text
+        assert "Analiz etmek istediğiniz müşteri görüşmesini buraya girin..." in page.text
+        assert "Görüşmeyi Analiz Et" in page.text
+        assert "Erken Uyarılar" in page.text
+        assert "Sentetik Zaman Serisi Demosu" in page.text
         assert "/static/css/styles.css" in page.text
         assert "/static/js/app.js" in page.text
 
@@ -39,6 +46,36 @@ def test_dashboard_and_static_assets_are_served():
             response = client.get(path)
             assert response.status_code == 200
             assert marker in response.text
+
+
+def test_visible_copy_is_turkish_and_api_contract_is_preserved():
+    html = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
+    app_js = (FRONTEND_DIR / "js" / "app.js").read_text(encoding="utf-8")
+    api_js = (FRONTEND_DIR / "js" / "api.js").read_text(encoding="utf-8")
+
+    obsolete_visible_copy = (
+        "Single Conversation Analysis",
+        "Analyze Conversation",
+        "Early Warning Demo",
+        "Analysis complete.",
+        "No result yet",
+        "Synthetic demo alerts are unavailable.",
+        "Cannot reach the API server.",
+    )
+    combined = "\n".join((html, app_js, api_js))
+    for phrase in obsolete_visible_copy:
+        assert phrase not in combined
+
+    for endpoint in (
+        "/health",
+        "/ready",
+        "/api/v1/info",
+        "/api/v1/alerts/demo",
+        "/api/v1/analyze",
+        "/api/v1/analyze/batch",
+    ):
+        assert endpoint in api_js
+    assert "customer_text" in api_js
 
 
 def test_dashboard_mount_does_not_capture_api_routes():
